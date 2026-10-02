@@ -10,7 +10,7 @@
 **Tên:** HCMC Air Quality Agentic RAG
 **Mục tiêu:** Người dùng hỏi bằng ngôn ngữ tự nhiên (tiếng Việt hoặc tiếng Anh) về chất lượng không khí tại một địa điểm ở TP.HCM. Một LangGraph agent tự quyết định gọi tool nào, theo thứ tự nào, để:
 1. Xác định tọa độ địa điểm (geocoding)
-2. Lấy dữ liệu chất lượng không khí thật theo tọa độ (WAQI API) và quy đổi sang **VN_AQI**
+2. Lấy nồng độ chất ô nhiễm theo tọa độ (Open-Meteo Air Quality API) và tính **VN_AQI**
 3. Tra khuyến nghị sức khỏe từ tài liệu chuẩn (RAG trên WHO AQG + QCVN 05:2023 + QĐ 1459/QĐ-TCMT)
 4. Tổng hợp câu trả lời có căn cứ, kèm khuyến nghị hành động
 
@@ -20,7 +20,8 @@
 **Quyết định đã chốt (2026-10-02)** — ghi đè mọi chỗ khác trong file nếu mâu thuẫn:
 | Hạng mục | Quyết định |
 |---|---|
-| LLM (agent, generator, judge) | **Groq API** (free tier) qua `langchain-groq`. Không dùng Claude trả phí. Model chọn qua `.env` |
+| LLM (agent, generator, judge) | **Groq API** (free tier) qua `langchain-groq`. Không dùng Claude trả phí. `LLM_MODEL=openai/gpt-oss-120b` (tool calling tốt), `JUDGE_MODEL=openai/gpt-oss-20b` (tiết kiệm quota; lần đo cuối dùng 120b). Groq không còn Llama chat model tại thời điểm chọn |
+| Nguồn dữ liệu AQI | **Open-Meteo Air Quality API** (dữ liệu mô hình CAMS, free, không cần key). Lý do: ngày 2026-10-02 WAQI có **0 trạm hoạt động** trong bbox TP.HCM (trạm Lãnh sự quán Mỹ ngừng gửi dữ liệu; `feed/geo` trả trạm ở Trat, Thái Lan ~480 km). Hướng mở rộng nếu cần số đo thật: OpenAQ |
 | Embedding / reranker | Chạy local trên **GPU** |
 | Thang AQI | **VN_AQI** theo QĐ 1459/QĐ-TCMT. Không dùng nhãn US EPA trong câu trả lời |
 | Phạm vi địa lý | Bounding box **TP.HCM cũ** (trước sáp nhập 1/7/2025); tên địa danh dùng **tên mới** (sau sáp nhập, không còn cấp quận/huyện) |
@@ -51,7 +52,7 @@ Người dùng (câu hỏi tự nhiên)
 └───────┬───────────────────────────────────┘
         │ tool calls (thứ tự do agent tự quyết)
         ├──► geocode_address(address)          → Nominatim (OSM) → lat/lng
-        ├──► get_air_quality(lat, lng)         → WAQI API → quy đổi → VN_AQI, PM2.5, PM10, NO2, O3, ...
+        ├──► get_air_quality(lat, lng)         → Open-Meteo → nồng độ µg/m³ → VN_AQI, PM2.5, PM10, NO2, O3, ...
         └──► retrieve_health_guideline(query)  → RAG pipeline (xem mục 4)
         │
         ▼
@@ -86,7 +87,7 @@ LLM tổng hợp → câu trả lời + khuyến nghị + nguồn trích dẫn
 | Tracing | LangSmith | Bật qua env var |
 | Test | `pytest` | |
 | Geocoding | Nominatim (OSM) | Bắt buộc User-Agent, ≤ 1 req/s |
-| AQI | WAQI API (`api.waqi.info`) | Token free tại aqicn.org/data-platform/token |
+| Chất lượng không khí | Open-Meteo Air Quality API (`air-quality-api.open-meteo.com`) | Free, không cần key; dữ liệu mô hình CAMS (không phải trạm đo) |
 
 > **Lưu ý cho Claude Code:** LangChain thay đổi import path thường xuyên (ví dụ `EnsembleRetriever`, `MultiQueryRetriever`, `ContextualCompressionRetriever` có thể nằm ở `langchain`, `langchain_classic` hoặc `langchain_community` tùy version). **Luôn kiểm tra version đã cài và docs hiện hành trước khi import**, không đoán. Ghi version thực tế vào `requirements.txt` / `pyproject.toml`.
 
@@ -170,7 +171,7 @@ hcmc_air_quality/
 - Mọi tham số có thể tinh chỉnh (chunk_size, overlap, k, trọng số hybrid, model name, top_n rerank) nằm trong `config/settings.py`, **không hardcode** rải rác.
 - Secrets chỉ đọc từ `.env`. Không bao giờ commit `.env`, không in token ra log.
 - Mỗi tool LangChain: input/output schema rõ ràng (Pydantic), docstring mô tả **khi nào nên dùng tool** (agent đọc docstring này để chọn tool).
-- Tool phải xử lý lỗi gọn: timeout, không tìm thấy địa chỉ, trạm không có dữ liệu → trả về message lỗi có cấu trúc, không raise exception làm sập agent.
+- Tool phải xử lý lỗi gọn: timeout, không tìm thấy địa chỉ, API không có dữ liệu → trả về message lỗi có cấu trúc, không raise exception làm sập agent.
 - Gọi API ngoài: có timeout (10s), retry tối đa 2 lần với backoff, cache kết quả geocode (dict/file) để không gọi lặp.
 - Nominatim: header `User-Agent` riêng của project, tôn trọng giới hạn 1 request/giây.
 
@@ -206,7 +207,6 @@ LLM_MODEL=                    # model Groq sinh câu trả lời / agent (phải
 JUDGE_MODEL=                  # model Groq chấm điểm RAGAS
 
 # Data APIs
-WAQI_TOKEN=
 NOMINATIM_USER_AGENT=hcmc-aq-agent/0.1 (your-email@example.com)
 
 # Tracing
@@ -247,20 +247,19 @@ CHROMA_DIR=./chroma_db
 Kèm: định nghĩa nhóm nhạy cảm (trẻ em, người già, người bệnh hô hấp/tim mạch, phụ nữ mang thai), khuyến nghị cụ thể (khẩu trang, hạn chế vận động ngoài trời, đóng cửa sổ, máy lọc không khí...).
 
 ### 6.2 API thời gian thực
-**WAQI**
+**Open-Meteo Air Quality** (không cần key)
 ```
-GET https://api.waqi.info/feed/geo:{lat};{lng}/?token={TOKEN}       # chính
-GET https://api.waqi.info/search/?keyword={kw}&token={TOKEN}
-GET https://api.waqi.info/map/bounds/?latlng={lat1},{lng1},{lat2},{lng2}&token={TOKEN}
+GET https://air-quality-api.open-meteo.com/v1/air-quality
+    ?latitude={lat}&longitude={lng}
+    &hourly=pm2_5,pm10,nitrogen_dioxide,ozone,sulphur_dioxide,carbon_monoxide
+    &current=pm2_5,pm10,nitrogen_dioxide,ozone,sulphur_dioxide,carbon_monoxide
+    &past_days=1&timezone=Asia/Ho_Chi_Minh
 ```
-Response quan tâm: `data.aqi`, `data.iaqi.{pm25,pm10,no2,o3,so2,co}.v`, `data.city.name`, `data.city.geo`, `data.time.s`, `data.dominentpol`.
-→ Tool phải trả về cả **tên trạm + khoảng cách từ điểm hỏi tới trạm + thời điểm đo**, để agent nói rõ dữ liệu lấy từ đâu.
+Response quan tâm: `current.*`, `hourly.time`, `hourly.<biến>`, `hourly_units` (µg/m³), `latitude/longitude` (tâm ô lưới thực tế).
+→ Tool phải trả về **nguồn (`data_source: "Open-Meteo / CAMS (mô hình)"`), tọa độ ô lưới, thời điểm dữ liệu**, để agent nói rõ đây là số liệu mô hình, không phải trạm đo.
+→ Lưu ý: CAMS global có độ phân giải thô (cỡ vài chục km) → các phường gần nhau có thể ra giá trị gần như giống nhau. Ghi vào hạn chế.
 
-**Quy đổi sang VN_AQI (quan trọng):** `data.aqi` và `data.iaqi.*.v` của WAQI là **chỉ số phụ theo thang US EPA**, không phải nồng độ µg/m³. Cách xử lý đã chốt:
-1. Đổi ngược chỉ số phụ US EPA → nồng độ, dùng bảng breakpoint US EPA (nội suy tuyến tính ngược).
-2. Từ nồng độ, tính chỉ số phụ VN_AQI cho từng chất theo bảng breakpoint của QĐ 1459; VN_AQI = max các chỉ số phụ.
-3. Đây là **xấp xỉ** (WAQI dùng trung bình/NowCast khác cách VN_AQI giờ tính) → ghi rõ trong output tool (`aqi_method: "approx_from_waqi"`) và trong mục hạn chế của README.
-4. Toàn bộ logic quy đổi nằm trong `src/tools/vn_aqi.py`, hàm thuần, có unit test với giá trị kiểm tra tay.
+**Tính VN_AQI:** Open-Meteo trả **nồng độ µg/m³** → tính VN_AQI **trực tiếp** theo công thức và bảng breakpoint của QĐ 1459 (AQI giờ / AQI ngày, đối chiếu văn bản gốc ở Phase 1; dùng `past_days` để có đủ chuỗi giờ nếu công thức cần trung bình nhiều giờ). VN_AQI = max các chỉ số phụ. Toàn bộ logic nằm trong `src/tools/vn_aqi.py`, hàm thuần, có unit test với giá trị tính tay.
 
 **Nominatim**
 ```
@@ -274,14 +273,14 @@ GET https://nominatim.openstreetmap.org/search?q={address}&format=json&limit=1&c
 ## 7. Kế hoạch triển khai
 
 ### PHASE 0 — Setup (≈ 2 giờ)
-- [ ] Tạo repo theo cấu trúc mục 3, `pyproject.toml`, `.gitignore`, `.env.example`
-- [ ] Cài dependencies, ghi version thực tế
-- [ ] `config/settings.py` load env
-- [ ] Đăng ký WAQI token, tạo LangSmith project
-- [ ] Chọn model Groq cho `LLM_MODEL` / `JUDGE_MODEL` (kiểm tra danh sách model hiện hành, tool calling, rate limit free tier) — hỏi người dùng duyệt
-- [ ] `scripts/smoke_test.py`: gọi thử LLM (Groq) 1 câu, WAQI 1 tọa độ (trung tâm Q1 cũ: 10.7769, 106.7009), Nominatim 1 địa chỉ, kiểm tra embedding chạy trên GPU
+- [x] Tạo repo theo cấu trúc mục 3, `pyproject.toml`, `.gitignore`, `.env.example`
+- [x] Cài dependencies, ghi version thực tế
+- [x] `config/settings.py` load env
+- [ ] Tạo LangSmith project (tùy chọn — chưa làm)
+- [x] Chọn model Groq cho `LLM_MODEL` / `JUDGE_MODEL` (kiểm tra danh sách model hiện hành, tool calling, rate limit free tier) — hỏi người dùng duyệt
+- [x] `scripts/smoke_test.py`: gọi thử LLM (Groq) 1 câu, Open-Meteo 1 tọa độ (trung tâm Q1 cũ: 10.7769, 106.7009), Nominatim 1 địa chỉ, kiểm tra embedding chạy trên GPU
 
-**DoD:** smoke test chạy qua cả 3 lời gọi.
+**DoD:** smoke test chạy qua cả 4 kiểm tra.
 
 ---
 
@@ -398,11 +397,11 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 - [ ] `tools/geocode.py` — `geocode_address(address: str)`
   - Output: `{lat, lng, display_name, district?}` hoặc `{error}`
   - Cache, rate limit, kiểm tra bounding box TP.HCM
-- [ ] `tools/vn_aqi.py` — hàm thuần quy đổi US AQI sub-index → nồng độ → VN_AQI (xem mục 6.2), unit test với giá trị tính tay
+- [ ] `tools/vn_aqi.py` — hàm thuần tính VN_AQI từ nồng độ µg/m³ theo QĐ 1459 (xem mục 6.2), unit test với giá trị tính tay
 - [ ] `tools/air_quality.py` — `get_air_quality(lat: float, lng: float)`
-  - Output: `{vn_aqi, category, dominant_pollutant, pm25, pm10, no2, o3, aqi_method, station_name, station_distance_km, measured_at}` hoặc `{error}`
+  - Output: `{vn_aqi, category, dominant_pollutant, pm25, pm10, no2, o3, so2, co, data_source, grid_lat, grid_lng, measured_at, note}` hoặc `{error}`
   - Tính `category` theo thang VN_AQI (hàm thuần, có unit test)
-  - Tính khoảng cách điểm hỏi → trạm (haversine); nếu > ngưỡng (vd 10 km) thêm cảnh báo "trạm ở xa"
+  - `note`: luôn nhắc đây là dữ liệu mô hình CAMS độ phân giải thô, không phải trạm đo
 - [ ] `tests/test_tools.py`: test với mock response (không gọi API thật trong unit test) + 1 integration test đánh dấu riêng
 - [ ] Sanity check thật: Q1 cũ, Q7 cũ, Thủ Đức cũ, Bình Tân cũ, Củ Chi cũ (hỏi bằng tên cũ lẫn tên phường/xã mới) + 1 địa điểm ngoài bbox (vd Thủ Dầu Một) phải bị từ chối
 
@@ -456,7 +455,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 ---
 
 ### PHASE 5 — Hoàn thiện (tùy chọn)
-- [ ] UI đơn giản (Streamlit hoặc Gradio): chat + bản đồ Leaflet/folium hiển thị trạm (WAQI `/map/bounds/` cho bbox TP.HCM)
+- [ ] UI đơn giản (Streamlit hoặc Gradio): chat + bản đồ Leaflet/folium hiển thị điểm hỏi và giá trị VN_AQI
 - [ ] README: kiến trúc, cách chạy, bảng kết quả ablation + agent eval, hạn chế đã biết
 - [ ] Demo GIF / video ngắn
 - [ ] Cập nhật CV: đổi "prototyping" → "built", thêm số liệu thật
@@ -467,7 +466,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 
 | Phase | Thời lượng | Trạng thái |
 |---|---|---|
-| 0 Setup | ~2 giờ | ⬜ |
+| 0 Setup | ~2 giờ | ✅ |
 | 1 RAG (V0→V4) | 3 ngày | ⬜ |
 | 2 Geo tools | 0.5–1 ngày | ⬜ |
 | 3 Agent | 1 ngày | ⬜ |
@@ -484,11 +483,11 @@ Claude Code: cập nhật cột trạng thái (⬜ → 🟨 đang làm → ✅ x
 |---|---|
 | PDF QCVN extract lỗi bảng/font | pdfplumber hoặc sửa tay vào `data/processed/`, ghi chú |
 | Corpus nhỏ → BM25/rerank cải thiện ít | Vẫn ghi kết quả thật; đó cũng là một phát hiện hợp lệ |
-| WAQI trạm gần nhất ở xa điểm hỏi | Trả khoảng cách + cảnh báo trong câu trả lời |
-| Trạm không có dữ liệu mới | Trả `measured_at`, cảnh báo dữ liệu cũ |
+| WAQI không có trạm hoạt động ở TP.HCM (đã xảy ra 2026-10-02) | Đã chuyển sang Open-Meteo; OpenAQ là hướng mở rộng nếu cần số đo thật |
+| Dữ liệu Open-Meteo là mô hình (CAMS), có thể lệch so với đo thực tế; độ phân giải thô | Gắn `data_source` + `note`, agent nói rõ trong câu trả lời; ghi vào hạn chế README |
+| Open-Meteo không trả dữ liệu / timeout | Trả lỗi có cấu trúc, agent báo không lấy được số liệu, không tự đoán |
 | Nominatim không hiểu địa chỉ tiếng Việt không dấu / viết tắt ("Q7") | Chuẩn hóa ("Q7" → "Quận 7"), thêm hậu tố thành phố |
 | Tên đơn vị hành chính thay đổi sau sáp nhập (1/7/2025) | Nhận cả tên cũ lẫn mới khi hỏi; trả lời bằng tên mới; dữ liệu OSM có thể chưa cập nhật hết → ghi vào hạn chế |
-| VN_AQI quy đổi từ WAQI chỉ là xấp xỉ | Gắn `aqi_method`, nói rõ trong câu trả lời và README |
 | QĐ 1459 hết hiệu lực / bị thay thế | Kiểm tra trước khi ingest; nếu có văn bản mới thì báo người dùng |
 | Groq free tier giới hạn rate (req/phút, token/ngày) | Retry có backoff khi 429, cache kết quả eval, chạy subset khi debug, giãn cách request khi chạy RAGAS |
 | Kết quả RAGAS dao động giữa các lần chạy | Chạy ≥ 2 lần cho variant cuối, báo trung bình |
@@ -505,6 +504,6 @@ Claude Code: cập nhật cột trạng thái (⬜ → 🟨 đang làm → ✅ x
 ---
 
 ## 11. Mô tả CV hiện tại
-> Assigned to explore **GeoAI**: prototyping an **agentic RAG** system for Ho Chi Minh City air quality — **LangGraph** agent autonomously selecting and chaining OSM/WAQI spatial tools and **hybrid retrieval** over WHO and QCVN 05:2023 guidelines, with **RAGAS** and trajectory-based evaluation planned.
+> Assigned to explore **GeoAI**: prototyping an **agentic RAG** system for Ho Chi Minh City air quality — **LangGraph** agent autonomously selecting and chaining OSM/Open-Meteo spatial tools and **hybrid retrieval** over WHO and QCVN 05:2023 guidelines, with **RAGAS** and trajectory-based evaluation planned.
 
 Cập nhật sau Phase 4 bằng số liệu thật (vd: "improving context recall from X to Y across five pipeline variants").

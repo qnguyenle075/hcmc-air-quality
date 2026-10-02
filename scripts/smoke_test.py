@@ -1,4 +1,4 @@
-"""Smoke test Phase 0: kiểm tra Groq, WAQI, Nominatim và embedding trên GPU.
+"""Smoke test Phase 0: kiểm tra Groq, Open-Meteo Air Quality, Nominatim và embedding trên GPU.
 
 Chạy: uv run python scripts/smoke_test.py
 Không in token/API key ra màn hình.
@@ -47,26 +47,32 @@ def check_groq() -> bool:
     return True
 
 
-def check_waqi() -> bool:
-    """Lấy dữ liệu WAQI tại 1 tọa độ."""
-    if not settings.api.waqi_token:
-        print("[WAQI] BỎ QUA: chưa có WAQI_TOKEN trong .env")
-        return False
-    url = f"{settings.api.waqi_base_url}/feed/geo:{TEST_LAT};{TEST_LNG}/"
-    resp = httpx.get(url, params={"token": settings.api.waqi_token}, timeout=settings.api.timeout_s)
+def check_open_meteo() -> bool:
+    """Lấy nồng độ chất ô nhiễm từ Open-Meteo Air Quality tại 1 tọa độ."""
+    variables = ",".join(settings.api.open_meteo_vars)
+    resp = httpx.get(
+        settings.api.open_meteo_aq_url,
+        params={
+            "latitude": TEST_LAT,
+            "longitude": TEST_LNG,
+            "current": variables,
+            "hourly": variables,
+            "past_days": settings.api.open_meteo_past_days,
+            "timezone": settings.api.timezone,
+        },
+        timeout=settings.api.timeout_s,
+    )
     resp.raise_for_status()
     body = resp.json()
-    if body.get("status") != "ok":
-        print(f"[WAQI] LỖI: {body.get('data')}")
-        return False
-    data = body["data"]
-    iaqi = {k: v.get("v") for k, v in data.get("iaqi", {}).items()}
+    current = body.get("current", {})
+    units = body.get("current_units", {})
+    values = {v: f"{current.get(v)} {units.get(v, '')}".strip() for v in settings.api.open_meteo_vars}
+    n_hours = len(body.get("hourly", {}).get("time", []))
     print(
-        f"[WAQI] OK: trạm={data['city']['name']} | geo={data['city']['geo']} | "
-        f"aqi(US)={data['aqi']} | dominentpol={data.get('dominentpol')} | "
-        f"time={data['time']['s']} | iaqi={iaqi}"
+        f"[Open-Meteo] OK: ô lưới=({body.get('latitude')}, {body.get('longitude')}) | "
+        f"time={current.get('time')} | số giờ hourly={n_hours} | {values}"
     )
-    return True
+    return current.get("pm2_5") is not None
 
 
 def check_nominatim() -> bool:
@@ -115,7 +121,7 @@ def main() -> int:
     results: dict[str, bool] = {}
     for name, fn in [
         ("groq", check_groq),
-        ("waqi", check_waqi),
+        ("open_meteo", check_open_meteo),
         ("nominatim", check_nominatim),
         ("embedding", check_embedding),
     ]:

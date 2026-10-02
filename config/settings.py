@@ -72,17 +72,25 @@ class RAGSettings:
 
 @dataclass(frozen=True)
 class APISettings:
-    """Cấu hình API ngoài (WAQI, Nominatim)."""
+    """Cấu hình API ngoài (Open-Meteo Air Quality, Nominatim)."""
 
-    waqi_token: str = _env("WAQI_TOKEN")
-    waqi_base_url: str = "https://api.waqi.info"
+    open_meteo_aq_url: str = "https://air-quality-api.open-meteo.com/v1/air-quality"
+    open_meteo_vars: tuple[str, ...] = (
+        "pm2_5",
+        "pm10",
+        "nitrogen_dioxide",
+        "ozone",
+        "sulphur_dioxide",
+        "carbon_monoxide",
+    )
+    open_meteo_past_days: int = 1  # đủ chuỗi giờ nếu công thức VN_AQI cần trung bình nhiều giờ
+    timezone: str = "Asia/Ho_Chi_Minh"
     nominatim_url: str = "https://nominatim.openstreetmap.org/search"
     nominatim_user_agent: str = _env("NOMINATIM_USER_AGENT", "hcmc-aq-agent/0.1")
     nominatim_min_interval_s: float = 1.0  # chính sách Nominatim: ≤ 1 req/s
     timeout_s: float = 10.0
     max_retries: int = 2
     backoff_s: float = 1.0
-    station_far_km: float = 10.0  # trạm xa hơn ngưỡng này → cảnh báo
 
 
 @dataclass(frozen=True)
