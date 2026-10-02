@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Môi trường Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Dữ liệu / index
+data/raw/*
+!data/raw/.gitkeep
+chroma_db/
+.cache/
+
+# IDE / Claude Code local
+.vscode/
+.idea/
+.claude/settings.local.json

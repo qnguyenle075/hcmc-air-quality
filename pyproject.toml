@@ -1,0 +1,46 @@
+[project]
+name = "hcmc-air-quality"
+version = "0.1.0"
+description = "Agentic RAG hỏi đáp chất lượng không khí TP.HCM (LangGraph + Groq + RAG trên WHO AQG, QCVN 05:2023, QĐ 1459)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Orchestration / LLM
+    "langchain>=1.4.3",
+    "langchain-core>=1.6.6",
+    "langchain-community>=0.4.2",
+    "langchain-groq>=1.1.3",
+    "langgraph>=1.2.12",
+    "langsmith>=0.14.3",
+    # RAG
+    "langchain-huggingface>=1.2.2",
+    "langchain-chroma>=1.1.0",
+    "sentence-transformers>=6.1.0",
+    "torch>=2.11.0",
+    "rank-bm25>=0.2.2",
+    # PDF
+    "pymupdf>=1.28.2",
+    "pdfplumber>=0.11.10",
+    # Eval
+    "ragas>=0.4.3",
+    "agentevals>=0.0.9",
+    # Tiện ích
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "python-dotenv>=1.2.4",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.1.1"]
+
+# torch bản CUDA 12.8 (driver máy hỗ trợ CUDA 12.9)
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: test gọi API thật (chạy riêng bằng -m integration)"]

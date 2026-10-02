@@ -1,0 +1,510 @@
+# CLAUDE.md — HCMC Air Quality Agentic RAG
+
+> File này vừa là **rule** cho Claude Code, vừa là **plan triển khai** của project.
+> Claude Code: đọc toàn bộ file này trước khi làm bất kỳ task nào. Luôn làm theo đúng thứ tự phase, không nhảy cóc.
+
+---
+
+## 0. Tóm tắt project
+
+**Tên:** HCMC Air Quality Agentic RAG
+**Mục tiêu:** Người dùng hỏi bằng ngôn ngữ tự nhiên (tiếng Việt hoặc tiếng Anh) về chất lượng không khí tại một địa điểm ở TP.HCM. Một LangGraph agent tự quyết định gọi tool nào, theo thứ tự nào, để:
+1. Xác định tọa độ địa điểm (geocoding)
+2. Lấy dữ liệu chất lượng không khí thật theo tọa độ (WAQI API) và quy đổi sang **VN_AQI**
+3. Tra khuyến nghị sức khỏe từ tài liệu chuẩn (RAG trên WHO AQG + QCVN 05:2023 + QĐ 1459/QĐ-TCMT)
+4. Tổng hợp câu trả lời có căn cứ, kèm khuyến nghị hành động
+
+**Ví dụ câu hỏi:**
+> "Không khí ở phường Tân Thuận hôm nay thế nào, tôi có nên cho con ra ngoài chơi không?"
+
+**Quyết định đã chốt (2026-10-02)** — ghi đè mọi chỗ khác trong file nếu mâu thuẫn:
+| Hạng mục | Quyết định |
+|---|---|
+| LLM (agent, generator, judge) | **Groq API** (free tier) qua `langchain-groq`. Không dùng Claude trả phí. Model chọn qua `.env` |
+| Embedding / reranker | Chạy local trên **GPU** |
+| Thang AQI | **VN_AQI** theo QĐ 1459/QĐ-TCMT. Không dùng nhãn US EPA trong câu trả lời |
+| Phạm vi địa lý | Bounding box **TP.HCM cũ** (trước sáp nhập 1/7/2025); tên địa danh dùng **tên mới** (sau sáp nhập, không còn cấp quận/huyện) |
+| Ngôn ngữ code | Comment, docstring, README viết **tiếng Việt** |
+| Thư mục gốc | `D:\LabBK\hcmc_air_quality` |
+| Git | Claude Code **không commit**; người dùng tự commit |
+| Quy trình | Claude Code **phải hỏi ý người dùng trước khi làm** bất kỳ việc gì (tạo/sửa file, cài package, tải dữ liệu) |
+
+**Trạng thái:** Prototype / MVP + portfolio. Ưu tiên: chạy được với data thật, đo được bằng số.
+
+**Nguyên tắc cốt lõi:**
+- **RAG làm trước, agent làm sau.** RAG phải được build và đánh giá độc lập trước khi ghép vào agent.
+- **Build theo tầng, đo sau mỗi tầng** (ablation). Không build hết rồi mới đo.
+- **Không để LLM tự bịa số liệu** (tọa độ, AQI, ngưỡng nồng độ, khuyến nghị y tế). Mọi con số phải đến từ tool hoặc tài liệu.
+
+---
+
+## 1. Kiến trúc tổng thể
+
+```
+Người dùng (câu hỏi tự nhiên)
+        │
+        ▼
+┌───────────────────────────────────────────┐
+│ LangGraph Agent (LLM = planner)            │
+│  - đọc câu hỏi + lịch sử                    │
+│  - quyết định gọi tool / trả lời cuối       │
+└───────┬───────────────────────────────────┘
+        │ tool calls (thứ tự do agent tự quyết)
+        ├──► geocode_address(address)          → Nominatim (OSM) → lat/lng
+        ├──► get_air_quality(lat, lng)         → WAQI API → quy đổi → VN_AQI, PM2.5, PM10, NO2, O3, ...
+        └──► retrieve_health_guideline(query)  → RAG pipeline (xem mục 4)
+        │
+        ▼
+LLM tổng hợp → câu trả lời + khuyến nghị + nguồn trích dẫn
+```
+
+**Mapping khái niệm:**
+| Khái niệm | Vị trí trong hệ thống |
+|---|---|
+| LLM / NLP | Hiểu câu hỏi, lập kế hoạch, sinh câu trả lời |
+| Agentic AI | Vòng lặp LangGraph tự chọn & nối tool |
+| GeoAI | `geocode_address`, `get_air_quality` (truy vấn theo tọa độ) |
+| RAG | `retrieve_health_guideline` |
+
+---
+
+## 2. Tech stack
+
+| Thành phần | Lựa chọn | Ghi chú |
+|---|---|---|
+| Ngôn ngữ | Python 3.11+ | |
+| Quản lý môi trường | `uv` (hoặc `venv` + `pip`) | |
+| Orchestration | `langchain`, `langgraph` | |
+| LLM | Groq API qua `langchain-groq` | Model cấu hình qua `.env`, không hardcode. Kiểm tra danh sách model Groq hiện hành + hỗ trợ tool calling trước khi chọn |
+| Embedding | `BAAI/bge-m3` qua `langchain-huggingface` / `sentence-transformers` | Đa ngữ, tốt cho tiếng Việt. Fallback: `intfloat/multilingual-e5-base` |
+| Vector store | Chroma (`langchain-chroma`), lưu local | |
+| Sparse retrieval | BM25 (`rank_bm25`) qua `BM25Retriever` | |
+| Reranker | `BAAI/bge-reranker-v2-m3` (cross-encoder) | |
+| PDF extraction | `pymupdf` (fallback `pdfplumber` cho bảng) | |
+| RAG eval | `ragas` | |
+| Agent eval | `agentevals` + LangSmith | |
+| Tracing | LangSmith | Bật qua env var |
+| Test | `pytest` | |
+| Geocoding | Nominatim (OSM) | Bắt buộc User-Agent, ≤ 1 req/s |
+| AQI | WAQI API (`api.waqi.info`) | Token free tại aqicn.org/data-platform/token |
+
+> **Lưu ý cho Claude Code:** LangChain thay đổi import path thường xuyên (ví dụ `EnsembleRetriever`, `MultiQueryRetriever`, `ContextualCompressionRetriever` có thể nằm ở `langchain`, `langchain_classic` hoặc `langchain_community` tùy version). **Luôn kiểm tra version đã cài và docs hiện hành trước khi import**, không đoán. Ghi version thực tế vào `requirements.txt` / `pyproject.toml`.
+
+---
+
+## 3. Cấu trúc thư mục
+
+```
+hcmc_air_quality/
+├── CLAUDE.md                     # file này
+├── README.md
+├── pyproject.toml
+├── .env.example
+├── .gitignore                    # bỏ qua .env, data/raw, chroma_db, __pycache__
+├── config/
+│   └── settings.py               # load env, hằng số (chunk size, k, model names...)
+├── data/
+│   ├── raw/                      # PDF gốc (không commit nếu license không cho)
+│   │   ├── who_aqg_2021_exec_summary.pdf
+│   │   ├── qcvn_05_2023_btnmt.pdf
+│   │   └── qd_1459_tcmt_2019.pdf     # hướng dẫn tính VN_AQI + khuyến nghị sức khỏe
+│   ├── processed/                # text đã làm sạch (.md / .jsonl)
+│   └── curated/
+│       └── aqi_health_categories.md   # bảng VN_AQI → khuyến nghị (tổng hợp từ QĐ 1459)
+├── chroma_db/                    # vector store (gitignore)
+├── src/
+│   ├── ingest/
+│   │   ├── extract.py            # PDF → text
+│   │   ├── clean.py              # làm sạch, chuẩn hóa unicode tiếng Việt
+│   │   └── chunk.py              # chunking + metadata
+│   ├── rag/
+│   │   ├── embeddings.py
+│   │   ├── vectorstore.py        # build / load Chroma
+│   │   ├── retrievers.py         # dense, bm25, hybrid, multi-query, rerank
+│   │   ├── prompts.py
+│   │   ├── chain.py              # build_rag_chain(variant="v0".."v4")
+│   │   └── tool.py               # retrieve_health_guideline (@tool)
+│   ├── tools/
+│   │   ├── geocode.py            # geocode_address (@tool)
+│   │   ├── air_quality.py        # get_air_quality (@tool)
+│   │   └── vn_aqi.py             # hàm thuần: US AQI sub-index → nồng độ → VN_AQI
+│   ├── agent/
+│   │   ├── prompts.py            # system prompt agent
+│   │   ├── graph.py              # LangGraph StateGraph
+│   │   └── run.py                # CLI chạy thử
+│   └── utils/
+│       └── logging.py
+├── eval/
+│   ├── datasets/
+│   │   ├── rag_testset.jsonl     # 25–30 câu
+│   │   └── agent_testset.jsonl   # cùng câu + trajectory kỳ vọng
+│   ├── run_rag_eval.py           # chạy RAGAS cho 1 variant
+│   ├── run_ablation.py           # chạy V0→V4, xuất bảng
+│   ├── run_agent_eval.py
+│   └── results/                  # csv/json/md kết quả, có timestamp
+├── scripts/
+│   ├── build_index.py            # ingest → chunk → embed → Chroma
+│   └── smoke_test.py
+└── tests/
+    ├── test_chunking.py
+    ├── test_retrievers.py
+    ├── test_tools.py
+    └── test_agent_graph.py
+```
+
+---
+
+## 4. Rule cho Claude Code (bắt buộc)
+
+### 4.1 Quy trình làm việc
+0. **Hỏi ý người dùng trước khi làm.** Trình bày việc sẽ làm → chờ đồng ý → làm → báo kết quả thật. Không tự tiện tạo/sửa file, cài package, tải dữ liệu.
+1. **Làm đúng thứ tự phase** (Phase 0 → 5). Không bắt đầu phase sau khi phase trước chưa đạt "Definition of Done".
+2. Trước mỗi task: đọc lại mục tương ứng trong file này, nêu ngắn gọn sẽ làm gì.
+3. Sau mỗi task: chạy test/smoke test liên quan, báo kết quả thật (không báo "chạy được" nếu chưa chạy).
+4. Mỗi variant RAG (V0–V4) phải được **đo xong** trước khi thêm tầng tiếp theo.
+5. Khi kết quả eval xấu đi sau khi thêm 1 tầng: **ghi lại số liệu, không xóa**, báo lại cho người dùng trước khi quyết định giữ/bỏ.
+6. Không tự ý mở rộng phạm vi (thêm tool, thêm nguồn data, thêm UI) nếu chưa được yêu cầu.
+
+### 4.2 Code
+- Python có type hints, docstring ngắn cho hàm public. Comment và docstring viết **tiếng Việt** (riêng docstring của tool LangChain có thể song ngữ nếu giúp LLM chọn tool tốt hơn).
+- Mọi tham số có thể tinh chỉnh (chunk_size, overlap, k, trọng số hybrid, model name, top_n rerank) nằm trong `config/settings.py`, **không hardcode** rải rác.
+- Secrets chỉ đọc từ `.env`. Không bao giờ commit `.env`, không in token ra log.
+- Mỗi tool LangChain: input/output schema rõ ràng (Pydantic), docstring mô tả **khi nào nên dùng tool** (agent đọc docstring này để chọn tool).
+- Tool phải xử lý lỗi gọn: timeout, không tìm thấy địa chỉ, trạm không có dữ liệu → trả về message lỗi có cấu trúc, không raise exception làm sập agent.
+- Gọi API ngoài: có timeout (10s), retry tối đa 2 lần với backoff, cache kết quả geocode (dict/file) để không gọi lặp.
+- Nominatim: header `User-Agent` riêng của project, tôn trọng giới hạn 1 request/giây.
+
+### 4.3 Dữ liệu & trung thực
+- Không bịa nội dung tài liệu. Nếu PDF extract lỗi (bảng vỡ, font lỗi), **báo lại** và sửa thủ công vào `data/processed/`, ghi chú đã sửa gì.
+- Ngưỡng nồng độ trong QCVN/WHO phải lấy đúng từ văn bản gốc — kiểm tra lại bằng mắt sau khi extract.
+- File `aqi_health_categories.md` là tài liệu tự soạn: ghi rõ ở đầu file nguồn tham chiếu (QĐ 1459/QĐ-TCMT — thang VN_AQI và khuyến nghị sức khỏe) và rằng đây là bảng tổng hợp. Nội dung khuyến nghị phải lấy từ văn bản gốc, không tự thêm.
+
+### 4.4 Prompt
+- Prompt RAG: chỉ trả lời dựa trên context; nếu context không có thông tin → nói rõ "Tài liệu không có thông tin về vấn đề này"; trích nguồn (source + section).
+- System prompt agent: bắt buộc dùng tool để lấy tọa độ và AQI, không tự đoán; bắt buộc gọi `retrieve_health_guideline` trước khi đưa khuyến nghị sức khỏe; trả lời cùng ngôn ngữ với người hỏi; câu hỏi ngoài phạm vi (không liên quan không khí / không ở TP.HCM) → từ chối lịch sự.
+- Thêm disclaimer ngắn: thông tin tham khảo, không thay thế tư vấn y tế.
+
+### 4.5 Eval
+- Mọi lần chạy eval lưu vào `eval/results/<YYYYMMDD-HHMM>_<variant>.json` + cập nhật `eval/results/ablation.md`.
+- Ghi kèm: variant, config (chunk_size, k, weights...), model generator, model judge, số câu, thời gian chạy, latency trung bình.
+- Dùng model nhỏ/rẻ làm judge khi thử nghiệm; chỉ dùng model lớn cho lần đo cuối. Ghi rõ judge model trong kết quả.
+- Không "tune theo test set" một cách gian lận: không sửa câu hỏi test để điểm cao hơn.
+
+### 4.6 Git
+- **Claude Code không commit.** Người dùng tự commit sau khi task xong.
+- Khi xong 1 task, Claude Code gợi ý message commit (dạng `feat(rag): add hybrid retriever (V1)`, `eval: V1 ragas results`) để người dùng dùng.
+- Gợi ý người dùng commit riêng sau mỗi variant RAG để có thể checkout lại.
+
+---
+
+## 5. Biến môi trường (`.env.example`)
+
+```bash
+# LLM (Groq)
+GROQ_API_KEY=
+LLM_MODEL=                    # model Groq sinh câu trả lời / agent (phải hỗ trợ tool calling)
+JUDGE_MODEL=                  # model Groq chấm điểm RAGAS
+
+# Data APIs
+WAQI_TOKEN=
+NOMINATIM_USER_AGENT=hcmc-aq-agent/0.1 (your-email@example.com)
+
+# Tracing
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=hcmc-aq-agent
+
+# RAG
+EMBEDDING_MODEL=BAAI/bge-m3
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+CHROMA_DIR=./chroma_db
+```
+
+---
+
+## 6. Nguồn dữ liệu
+
+### 6.1 Corpus RAG
+| File | Nguồn | Ghi chú |
+|---|---|---|
+| WHO Global Air Quality Guidelines 2021 — Executive Summary (~10 trang) | iris.who.int (handle 10665/345334) | License CC BY-NC-SA 3.0 IGO. Bắt đầu bằng bản tóm tắt. |
+| WHO AQG 2021 — bản đầy đủ (273 trang) | iris.who.int (handle 10665/345329) | **Tùy chọn**, chỉ thêm nếu cần mở rộng |
+| QCVN 05:2023/BTNMT | scem.gov.vn (Trung tâm Quan trắc môi trường miền Nam) — PDF free | Tránh luatvietnam / thuvienphapluat (paywall) |
+| QĐ 1459/QĐ-TCMT (2019) — Hướng dẫn tính toán chỉ số chất lượng không khí Việt Nam (VN_AQI) | Tổng cục Môi trường | Nguồn chính thức cho thang VN_AQI, bảng quy đổi nồng độ → AQI, và khuyến nghị sức khỏe. **Kiểm tra còn hiệu lực / có văn bản thay thế chưa trước khi dùng** |
+| `aqi_health_categories.md` | Tự soạn, tổng hợp từ QĐ 1459/QĐ-TCMT | Cầu nối giữa "chỉ số VN_AQI" và "khuyến nghị hành động" — WHO/QCVN chỉ có ngưỡng µg/m³ |
+
+**Nội dung `aqi_health_categories.md` (tối thiểu, theo VN_AQI):**
+| VN_AQI | Mức | Nhóm nhạy cảm | Người bình thường |
+|---|---|---|---|
+| 0–50 | Tốt | ... | ... |
+| 51–100 | Trung bình | ... | ... |
+| 101–150 | Kém | ... | ... |
+| 151–200 | Xấu | ... | ... |
+| 201–300 | Rất xấu | ... | ... |
+| 301–500 | Nguy hại | ... | ... |
+(Khoảng giá trị, tên mức và nội dung khuyến nghị phải đối chiếu đúng văn bản QĐ 1459.)
+
+Kèm: định nghĩa nhóm nhạy cảm (trẻ em, người già, người bệnh hô hấp/tim mạch, phụ nữ mang thai), khuyến nghị cụ thể (khẩu trang, hạn chế vận động ngoài trời, đóng cửa sổ, máy lọc không khí...).
+
+### 6.2 API thời gian thực
+**WAQI**
+```
+GET https://api.waqi.info/feed/geo:{lat};{lng}/?token={TOKEN}       # chính
+GET https://api.waqi.info/search/?keyword={kw}&token={TOKEN}
+GET https://api.waqi.info/map/bounds/?latlng={lat1},{lng1},{lat2},{lng2}&token={TOKEN}
+```
+Response quan tâm: `data.aqi`, `data.iaqi.{pm25,pm10,no2,o3,so2,co}.v`, `data.city.name`, `data.city.geo`, `data.time.s`, `data.dominentpol`.
+→ Tool phải trả về cả **tên trạm + khoảng cách từ điểm hỏi tới trạm + thời điểm đo**, để agent nói rõ dữ liệu lấy từ đâu.
+
+**Quy đổi sang VN_AQI (quan trọng):** `data.aqi` và `data.iaqi.*.v` của WAQI là **chỉ số phụ theo thang US EPA**, không phải nồng độ µg/m³. Cách xử lý đã chốt:
+1. Đổi ngược chỉ số phụ US EPA → nồng độ, dùng bảng breakpoint US EPA (nội suy tuyến tính ngược).
+2. Từ nồng độ, tính chỉ số phụ VN_AQI cho từng chất theo bảng breakpoint của QĐ 1459; VN_AQI = max các chỉ số phụ.
+3. Đây là **xấp xỉ** (WAQI dùng trung bình/NowCast khác cách VN_AQI giờ tính) → ghi rõ trong output tool (`aqi_method: "approx_from_waqi"`) và trong mục hạn chế của README.
+4. Toàn bộ logic quy đổi nằm trong `src/tools/vn_aqi.py`, hàm thuần, có unit test với giá trị kiểm tra tay.
+
+**Nominatim**
+```
+GET https://nominatim.openstreetmap.org/search?q={address}&format=json&limit=1&countrycodes=vn
+```
+→ Tự động thêm ", Thành phố Hồ Chí Minh" nếu chuỗi địa chỉ không chứa tên thành phố. Kiểm tra kết quả nằm trong bounding box **TP.HCM cũ** (trước sáp nhập 1/7/2025, không gồm Bình Dương / Bà Rịa–Vũng Tàu cũ); ngoài box → trả lỗi "ngoài phạm vi". Tọa độ bbox đặt trong `config/settings.py`.
+→ Tên địa danh trong câu trả lời dùng **tên đơn vị hành chính mới** (phường/xã sau sáp nhập). Người dùng vẫn có thể hỏi bằng tên cũ ("Quận 7", "Q7", "Thủ Đức") — geocode theo địa danh rồi hiển thị tên mới nếu Nominatim trả về.
+
+---
+
+## 7. Kế hoạch triển khai
+
+### PHASE 0 — Setup (≈ 2 giờ)
+- [ ] Tạo repo theo cấu trúc mục 3, `pyproject.toml`, `.gitignore`, `.env.example`
+- [ ] Cài dependencies, ghi version thực tế
+- [ ] `config/settings.py` load env
+- [ ] Đăng ký WAQI token, tạo LangSmith project
+- [ ] Chọn model Groq cho `LLM_MODEL` / `JUDGE_MODEL` (kiểm tra danh sách model hiện hành, tool calling, rate limit free tier) — hỏi người dùng duyệt
+- [ ] `scripts/smoke_test.py`: gọi thử LLM (Groq) 1 câu, WAQI 1 tọa độ (trung tâm Q1 cũ: 10.7769, 106.7009), Nominatim 1 địa chỉ, kiểm tra embedding chạy trên GPU
+
+**DoD:** smoke test chạy qua cả 3 lời gọi.
+
+---
+
+### PHASE 1 — RAG (3 ngày) ⭐ trọng tâm hiện tại
+
+Pipeline đích:
+```
+chunking → embedding → multi-query → hybrid search (BM25 + dense) → rerank → prompt → generator
+```
+Build theo variant, **đo RAGAS sau mỗi variant**:
+
+| Variant | Thành phần | Mục đích đo |
+|---|---|---|
+| **V0** | dense search (top-k) → prompt → generate | Baseline |
+| **V1** | V0 + hybrid (BM25 + dense, EnsembleRetriever) | Đóng góp của BM25 (thuật ngữ, mã số, đơn vị) |
+| **V2** | V1 + multi-query | Đóng góp của query expansion (câu đời thường vs văn bản kỹ thuật) |
+| **V3** | V2 + rerank (retrieve k=20 → rerank → top 5) | Đóng góp của cross-encoder |
+| **V4** | V3 + prompt tinh chỉnh | Đóng góp của prompt engineering |
+
+`build_rag_chain(variant: str)` phải tạo được bất kỳ variant nào từ cùng 1 codebase để ablation tái lập được.
+
+#### Ngày 1 — Corpus + vector store → V0
+**Sáng — thu thập & làm sạch**
+- [ ] Tải 3 PDF vào `data/raw/` (WHO AQG exec summary, QCVN 05:2023, QĐ 1459/QĐ-TCMT) — kiểm tra hiệu lực QĐ 1459
+- [ ] Soạn nháp `data/curated/aqi_health_categories.md` từ QĐ 1459 → người dùng duyệt
+- [ ] `extract.py`: PDF → text bằng pymupdf; nếu bảng vỡ → thử pdfplumber
+- [ ] `clean.py`: chuẩn hóa unicode NFC (tiếng Việt), bỏ header/footer lặp, sửa ngắt dòng giữa câu
+- [ ] **Kiểm tra bằng mắt** bảng giới hạn trong QCVN 05:2023 (bảng thông số cơ bản & độc hại) — đúng số, đúng đơn vị
+- [ ] Lưu text sạch vào `data/processed/`
+
+**Chiều — chunk + embed + index**
+- [ ] `chunk.py`: ưu tiên split theo heading/điều khoản (1.1, 2.1, ...) cho QCVN; còn lại `RecursiveCharacterTextSplitter`
+  - Mặc định: `chunk_size ≈ 600 token`, `overlap ≈ 100` (đặt trong settings)
+  - Bảng: giữ nguyên 1 bảng trong 1 chunk, không cắt giữa bảng
+  - Metadata: `{source, doc_title, section, language, chunk_id}`
+- [ ] `embeddings.py`: bge-m3 (normalize embeddings)
+- [ ] `vectorstore.py` + `scripts/build_index.py`: build Chroma, persist
+- [ ] `retrievers.py`: dense retriever
+- [ ] `prompts.py` + `chain.py`: V0 chain hoàn chỉnh
+- [ ] `tests/test_chunking.py`: không chunk rỗng, metadata đủ, bảng không bị cắt
+
+**DoD ngày 1:**
+- `retriever.invoke("AQI 160 có nên ra ngoài không")` trả về chunk liên quan (kiểm tra bằng mắt)
+- V0 trả lời được 5 câu thử tay, có trích nguồn
+
+#### Ngày 2 — Bộ test + baseline + V1
+**Sáng — bộ test**
+- [ ] Tạo `eval/datasets/rag_testset.jsonl`, 25–30 câu, schema:
+```json
+{
+  "id": "q001",
+  "group": "threshold | aqi_advice | reasoning | out_of_scope",
+  "language": "vi | en",
+  "question": "...",
+  "ground_truth": "...",
+  "reference_contexts": ["đoạn tài liệu lẽ ra phải tìm được"],
+  "reference_source": "qcvn_05_2023 | who_aqg_2021 | qd_1459_vn_aqi | aqi_categories | none"
+}
+```
+- [ ] Phân bổ:
+| Nhóm | Số câu | Ví dụ |
+|---|---|---|
+| `threshold` — tra ngưỡng trực tiếp | ~10 | "Giới hạn PM2.5 trung bình 24 giờ theo QCVN 05:2023 là bao nhiêu?" |
+| `aqi_advice` — khuyến nghị theo mức VN_AQI | ~8 | "AQI 180 thì người bị hen suyễn nên làm gì?" |
+| `reasoning` — tổng hợp/so sánh | ~5 | "Ngưỡng PM2.5 của WHO và QCVN khác nhau thế nào?" |
+| `out_of_scope` — bẫy | ~5 | "Máy lọc không khí loại nào tốt nhất?" → phải nói không có thông tin |
+- [ ] Trộn câu tiếng Việt và tiếng Anh, trộn văn phong đời thường và văn phong kỹ thuật
+- [ ] **Người dùng duyệt bộ test** trước khi chạy eval (Claude Code soạn nháp, người dùng xác nhận ground truth)
+
+**Chiều — eval baseline + V1**
+- [ ] `eval/run_rag_eval.py --variant v0`: chạy RAGAS
+  - Metrics: `context_precision`, `context_recall`, `faithfulness`, `answer_relevancy`
+  - Đo thêm: latency trung bình/câu, tỉ lệ từ chối đúng ở nhóm `out_of_scope`
+- [ ] Ghi baseline vào `eval/results/ablation.md`
+- [ ] `retrievers.py`: BM25 retriever (trên cùng tập chunk) + hybrid ensemble (trọng số mặc định 0.5/0.5)
+- [ ] Chạy eval V1, cập nhật bảng
+
+**DoD ngày 2:** bộ test được duyệt; có số V0 và V1.
+
+#### Ngày 3 — V2, V3, V4 + tổng hợp
+- [ ] V2: multi-query (sinh 3 biến thể câu hỏi, gộp kết quả, khử trùng lặp) → eval
+- [ ] V3: retrieve rộng k=20 → cross-encoder bge-reranker-v2-m3 → top 5 → eval
+- [ ] V4: tinh chỉnh prompt dựa trên lỗi quan sát được → eval
+- [ ] Phân tích lỗi: liệt kê các câu điểm thấp nhất ở variant tốt nhất, phân loại nguyên nhân
+- [ ] Chốt variant tốt nhất làm mặc định cho tool
+- [ ] `src/rag/tool.py`: `retrieve_health_guideline(query: str) -> str` (@tool), trả về câu trả lời + danh sách nguồn
+
+**Bảng chẩn đoán khi metric thấp:**
+| Metric thấp | Nguyên nhân thường gặp | Hướng sửa |
+|---|---|---|
+| Context recall | Chunk quá nhỏ/to; embedding kém tiếng Việt; bảng bị cắt | Đổi chunk size, split theo điều khoản, thử embedding khác |
+| Context precision | Lấy nhiều chunk rác | Giảm k, thêm rerank, chỉnh trọng số hybrid |
+| Faithfulness | LLM bịa ngoài context | Siết prompt, yêu cầu trích dẫn |
+| Answer relevancy | Trả lời lan man | Prompt yêu cầu trả lời trực tiếp, ngắn |
+
+**Ưu tiên khi thiếu thời gian:** cắt V2 (multi-query) trước; giữ hybrid + rerank.
+
+**DoD Phase 1:**
+- Bảng ablation V0→V4 đầy đủ trong `eval/results/ablation.md`
+- Tool `retrieve_health_guideline` chạy độc lập, có test
+
+**Mẫu `ablation.md`:**
+| Variant | Ctx Precision | Ctx Recall | Faithfulness | Answer Rel. | OOS refusal | Latency (s) | Ghi chú |
+|---|---|---|---|---|---|---|---|
+| V0 dense | | | | | | | |
+| V1 +hybrid | | | | | | | |
+| V2 +multi-query | | | | | | | |
+| V3 +rerank | | | | | | | |
+| V4 +prompt | | | | | | | |
+
+---
+
+### PHASE 2 — Geo tools (≈ 0.5–1 ngày)
+- [ ] `tools/geocode.py` — `geocode_address(address: str)`
+  - Output: `{lat, lng, display_name, district?}` hoặc `{error}`
+  - Cache, rate limit, kiểm tra bounding box TP.HCM
+- [ ] `tools/vn_aqi.py` — hàm thuần quy đổi US AQI sub-index → nồng độ → VN_AQI (xem mục 6.2), unit test với giá trị tính tay
+- [ ] `tools/air_quality.py` — `get_air_quality(lat: float, lng: float)`
+  - Output: `{vn_aqi, category, dominant_pollutant, pm25, pm10, no2, o3, aqi_method, station_name, station_distance_km, measured_at}` hoặc `{error}`
+  - Tính `category` theo thang VN_AQI (hàm thuần, có unit test)
+  - Tính khoảng cách điểm hỏi → trạm (haversine); nếu > ngưỡng (vd 10 km) thêm cảnh báo "trạm ở xa"
+- [ ] `tests/test_tools.py`: test với mock response (không gọi API thật trong unit test) + 1 integration test đánh dấu riêng
+- [ ] Sanity check thật: Q1 cũ, Q7 cũ, Thủ Đức cũ, Bình Tân cũ, Củ Chi cũ (hỏi bằng tên cũ lẫn tên phường/xã mới) + 1 địa điểm ngoài bbox (vd Thủ Dầu Một) phải bị từ chối
+
+**DoD:** 2 tool trả đúng format cho 5 địa điểm; lỗi được xử lý không làm sập.
+
+---
+
+### PHASE 3 — Agent LangGraph (≈ 1 ngày)
+- [ ] `agent/graph.py`: StateGraph với node `agent` (LLM bind_tools) + node `tools` (ToolNode), cạnh điều kiện: có tool call → tools, không → END
+- [ ] Giới hạn số bước (recursion limit ~ 8) để tránh loop
+- [ ] Memory nhiều lượt (checkpointer) — hỏi tiếp "vậy có nên mở cửa sổ không?" không cần nhắc lại địa chỉ
+- [ ] `agent/prompts.py`: system prompt theo mục 4.4
+- [ ] `agent/run.py`: CLI chat, in ra trace tool calls (tên tool + args) để debug
+- [ ] `tests/test_agent_graph.py`: với LLM giả/mock, kiểm tra graph route đúng
+- [ ] Chạy thử 10 câu, xem trace trên LangSmith
+
+**Trajectory kỳ vọng điển hình:**
+| Loại câu hỏi | Trajectory |
+|---|---|
+| Hỏi AQI + khuyến nghị tại địa điểm | geocode → get_air_quality → retrieve_health_guideline → answer |
+| Chỉ hỏi AQI tại địa điểm | geocode → get_air_quality → answer |
+| Chỉ hỏi kiến thức (ngưỡng QCVN...) | retrieve_health_guideline → answer |
+| Ngoài phạm vi | answer (từ chối), không gọi tool |
+| Câu hỏi tiếp theo cùng địa điểm | dùng lại tọa độ từ memory, không geocode lại |
+
+**DoD:** agent trả lời đúng luồng cho 10 câu thử, không bịa số liệu.
+
+---
+
+### PHASE 4 — Agent evaluation (≈ 1 ngày)
+- [ ] `eval/datasets/agent_testset.jsonl`: dùng lại câu hỏi phù hợp + thêm câu có địa điểm, thêm cột:
+```json
+{
+  "id": "a001",
+  "question": "...",
+  "expected_trajectory": ["geocode_address", "get_air_quality", "retrieve_health_guideline"],
+  "expected_args_hints": {"geocode_address": "Quận 7"},
+  "category": "full | aqi_only | knowledge_only | out_of_scope | follow_up | ambiguous"
+}
+```
+- [ ] Thêm câu khó: địa điểm mơ hồ ("chỗ tôi"), địa điểm ngoài TP.HCM, follow-up nhiều lượt
+- [ ] `eval/run_agent_eval.py` với `agentevals`:
+  - Trajectory match (strict / unordered / superset tùy loại)
+  - LLM-as-judge trajectory (không cần reference)
+- [ ] Metrics: tool selection accuracy, trajectory match rate, số bước trung bình vs tối thiểu, tỉ lệ loop, tỉ lệ từ chối đúng, latency end-to-end
+- [ ] Lưu kết quả + bảng tổng hợp vào `eval/results/agent_eval.md`
+- [ ] Phân tích lỗi: lỗi do chọn tool sai vs do tool trả kết quả sai vs do RAG
+
+**DoD:** có bảng số liệu agent eval + danh sách lỗi đã phân loại.
+
+---
+
+### PHASE 5 — Hoàn thiện (tùy chọn)
+- [ ] UI đơn giản (Streamlit hoặc Gradio): chat + bản đồ Leaflet/folium hiển thị trạm (WAQI `/map/bounds/` cho bbox TP.HCM)
+- [ ] README: kiến trúc, cách chạy, bảng kết quả ablation + agent eval, hạn chế đã biết
+- [ ] Demo GIF / video ngắn
+- [ ] Cập nhật CV: đổi "prototyping" → "built", thêm số liệu thật
+
+---
+
+## 8. Timeline tổng
+
+| Phase | Thời lượng | Trạng thái |
+|---|---|---|
+| 0 Setup | ~2 giờ | ⬜ |
+| 1 RAG (V0→V4) | 3 ngày | ⬜ |
+| 2 Geo tools | 0.5–1 ngày | ⬜ |
+| 3 Agent | 1 ngày | ⬜ |
+| 4 Agent eval | 1 ngày | ⬜ |
+| 5 Hoàn thiện | tùy chọn | ⬜ |
+
+Claude Code: cập nhật cột trạng thái (⬜ → 🟨 đang làm → ✅ xong) khi hoàn thành phase.
+
+---
+
+## 9. Rủi ro đã biết & cách xử lý
+
+| Rủi ro | Xử lý |
+|---|---|
+| PDF QCVN extract lỗi bảng/font | pdfplumber hoặc sửa tay vào `data/processed/`, ghi chú |
+| Corpus nhỏ → BM25/rerank cải thiện ít | Vẫn ghi kết quả thật; đó cũng là một phát hiện hợp lệ |
+| WAQI trạm gần nhất ở xa điểm hỏi | Trả khoảng cách + cảnh báo trong câu trả lời |
+| Trạm không có dữ liệu mới | Trả `measured_at`, cảnh báo dữ liệu cũ |
+| Nominatim không hiểu địa chỉ tiếng Việt không dấu / viết tắt ("Q7") | Chuẩn hóa ("Q7" → "Quận 7"), thêm hậu tố thành phố |
+| Tên đơn vị hành chính thay đổi sau sáp nhập (1/7/2025) | Nhận cả tên cũ lẫn mới khi hỏi; trả lời bằng tên mới; dữ liệu OSM có thể chưa cập nhật hết → ghi vào hạn chế |
+| VN_AQI quy đổi từ WAQI chỉ là xấp xỉ | Gắn `aqi_method`, nói rõ trong câu trả lời và README |
+| QĐ 1459 hết hiệu lực / bị thay thế | Kiểm tra trước khi ingest; nếu có văn bản mới thì báo người dùng |
+| Groq free tier giới hạn rate (req/phút, token/ngày) | Retry có backoff khi 429, cache kết quả eval, chạy subset khi debug, giãn cách request khi chạy RAGAS |
+| Kết quả RAGAS dao động giữa các lần chạy | Chạy ≥ 2 lần cho variant cuối, báo trung bình |
+
+---
+
+## 10. Ngoài phạm vi (không làm trong MVP)
+- Dự báo AQI (forecasting model)
+- Dữ liệu ảnh vệ tinh, mô hình CV
+- Ngập lụt, thiên tai khác
+- Triển khai production, auth, multi-user
+- Fine-tune embedding / LLM
+
+---
+
+## 11. Mô tả CV hiện tại
+> Assigned to explore **GeoAI**: prototyping an **agentic RAG** system for Ho Chi Minh City air quality — **LangGraph** agent autonomously selecting and chaining OSM/WAQI spatial tools and **hybrid retrieval** over WHO and QCVN 05:2023 guidelines, with **RAGAS** and trajectory-based evaluation planned.
+
+Cập nhật sau Phase 4 bằng số liệu thật (vd: "improving context recall from X to Y across five pipeline variants").
