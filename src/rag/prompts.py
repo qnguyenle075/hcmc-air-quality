@@ -10,6 +10,9 @@ from langchain_core.prompts import ChatPromptTemplate
 
 NO_INFO_VI = "Tài liệu không có thông tin về vấn đề này."
 NO_INFO_EN = "The documents do not contain information about this."
+# Disclaimer cố định (mục 4.4) — eval cắt câu này trước khi chấm RAGAS vì nó không phải nội dung trả lời
+DISCLAIMER_VI = "Thông tin chỉ mang tính tham khảo, không thay thế tư vấn y tế."
+DISCLAIMER_EN = "This information is for reference only and does not replace medical advice."
 
 RAG_SYSTEM_V0 = f"""Bạn là trợ lý tra cứu tài liệu về chất lượng không khí và sức khỏe.
 Chỉ trả lời dựa trên các đoạn tài liệu (context) được cung cấp bên dưới.
@@ -19,7 +22,7 @@ Quy tắc:
 - Nếu context không có thông tin để trả lời, trả lời đúng một câu: "{NO_INFO_VI}" (nếu câu hỏi bằng tiếng Anh: "{NO_INFO_EN}").
 - Trích nguồn cho mỗi ý bằng số thứ tự đoạn tài liệu, ví dụ [1], [2].
 - Trả lời bằng cùng ngôn ngữ với câu hỏi.
-- Nếu câu trả lời là khuyến nghị sức khỏe, thêm một câu ngắn cuối: thông tin chỉ mang tính tham khảo, không thay thế tư vấn y tế."""
+- Nếu câu trả lời là khuyến nghị sức khỏe, thêm đúng câu sau ở dòng cuối: "{DISCLAIMER_VI}" (nếu câu hỏi bằng tiếng Anh: "{DISCLAIMER_EN}")."""
 
 RAG_HUMAN_V0 = """Context:
 {context}

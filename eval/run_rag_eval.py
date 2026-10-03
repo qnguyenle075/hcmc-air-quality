@@ -48,6 +48,15 @@ _REFUSAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Disclaimer y tế (mục 4.4) không phải nội dung trả lời → cắt trước khi chấm RAGAS, nếu không judge
+# coi là claim không có trong context (đo 2026-10-03: q001 mất 2/4 claim faithfulness vì disclaimer).
+# Cắt theo câu (không theo dòng) để không mất nội dung nếu disclaimer viết liền dòng với câu trả lời;
+# bắt cả biến thể LLM tự viết lại ("…tham khảo…y tế…" / "…reference…medical advice…").
+_DISCLAIMER_RE = re.compile(
+    r"[*_]*[^.!?\n*_]*(?:tham khảo[^.!?\n]*y tế|reference[^.!?\n]*medical advice)[^.!?\n]*[.!?]?[*_]*",
+    re.IGNORECASE,
+)
+
 # Cấu hình chạy RAGAS: judge đã có rate limiter (5 RPM) → timeout mỗi job phải đủ dài để chờ lượt
 RAGAS_RUN_CONFIG = dict(max_workers=2, max_retries=10, max_wait=60, timeout=600)
 
@@ -55,6 +64,11 @@ RAGAS_RUN_CONFIG = dict(max_workers=2, max_retries=10, max_wait=60, timeout=600)
 def is_refusal(answer: str) -> bool:
     """Câu trả lời có phải là từ chối 'tài liệu không có thông tin' không."""
     return bool(_REFUSAL_RE.search(answer))
+
+
+def strip_disclaimer(answer: str) -> str:
+    """Bỏ dòng disclaimer y tế khỏi câu trả lời (chỉ dùng cho bước chấm RAGAS)."""
+    return _DISCLAIMER_RE.sub("", answer).strip()
 
 
 def load_testset(limit: int | None = None) -> list[dict]:
@@ -74,6 +88,7 @@ def generate_answers(variant: str, rows: list[dict], usage: UsageMetadataCallbac
         results.append({
             **row,
             "answer": out["answer"],
+            "answer_scored": strip_disclaimer(out["answer"]),  # bản đưa cho RAGAS chấm
             "retrieved_contexts": [d.page_content for d in out["contexts"]],
             "retrieved_chunk_ids": [d.metadata["chunk_id"] for d in out["contexts"]],
             "latency_s": round(latency, 3),
@@ -89,7 +104,7 @@ def run_ragas(results: list[dict], usage: UsageMetadataCallbackHandler) -> list[
     dataset = EvaluationDataset(samples=[
         SingleTurnSample(
             user_input=r["question"],
-            response=r["answer"],
+            response=r["answer_scored"],
             retrieved_contexts=r["retrieved_contexts"],
             reference=r["ground_truth"],
             reference_contexts=r["reference_contexts"],

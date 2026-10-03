@@ -49,8 +49,15 @@ class LLMSettings:
     cerebras_api_key: str = _env("CEREBRAS_API_KEY")
     cerebras_base_url: str = "https://api.cerebras.ai/v1"
     judge_requests_per_minute: float = 5  # Cerebras free trial: 5 RPM
-    judge_reasoning_effort: str = "low"  # chỉ dùng khi judge_provider=groq (model gpt-oss)
-    judge_max_tokens: int = 4096  # tránh output bị cắt (finish_reason=length) khi chấm RAGAS
+    # Mức reasoning của judge. Cerebras qwen-3.8-27b: "none" = tắt reasoning (theo docs Cerebras,
+    # không dùng disable_reasoning/enable_thinking). Groq gpt-oss chỉ nhận low|medium|high.
+    # Tắt reasoning để tiết kiệm token (đo 2026-10-03: reasoning chiếm ~85% output token judge).
+    judge_reasoning_effort: str = _env(
+        "JUDGE_REASONING_EFFORT", "none" if _env("JUDGE_PROVIDER", "cerebras") == "cerebras" else "low"
+    )
+    # Tránh output bị cắt (finish_reason=length) khi chấm RAGAS
+    # (đo 2026-10-03 khi còn reasoning: 4096 làm 1/3 job faithfulness bị LLMDidNotFinish)
+    judge_max_tokens: int = 8192
 
 
 @dataclass(frozen=True)

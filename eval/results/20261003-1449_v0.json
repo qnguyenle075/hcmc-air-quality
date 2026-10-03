@@ -1,0 +1,115 @@
+{
+  "timestamp": "2026-10-03T14:49:12",
+  "config": {
+    "variant": "v0",
+    "chunk_size": 600,
+    "chunk_overlap": 100,
+    "top_k": 5,
+    "hybrid_weights": [
+      0.5,
+      0.5
+    ],
+    "multi_query_n": 3,
+    "rerank_fetch_k": 20,
+    "rerank_top_n": 5,
+    "embedding_model": "BAAI/bge-m3",
+    "reranker_model": "BAAI/bge-reranker-v2-m3",
+    "generator_model": "openai/gpt-oss-120b",
+    "judge_provider": "cerebras",
+    "judge_model": "qwen-3.8-27b",
+    "judge_reasoning_effort": "none",
+    "ragas_run_config": {
+      "max_workers": 2,
+      "max_retries": 10,
+      "max_wait": 60,
+      "timeout": 600
+    }
+  },
+  "n_questions": 1,
+  "runtime_s": 165.4,
+  "summary": {
+    "llm_context_precision_with_reference": 1.0,
+    "llm_context_precision_with_reference_failed": 0,
+    "context_recall": 1.0,
+    "context_recall_failed": 0,
+    "faithfulness": 0.5,
+    "faithfulness_failed": 0,
+    "answer_relevancy": 0.8428,
+    "answer_relevancy_failed": 0,
+    "oos_refusal_rate": null,
+    "false_refusal_rate": 0.0,
+    "latency_mean_s": 13.254,
+    "latency_p50_s": 13.254,
+    "by_group": {
+      "threshold": {
+        "llm_context_precision_with_reference": 1.0,
+        "context_recall": 1.0,
+        "faithfulness": 0.5,
+        "answer_relevancy": 0.8428
+      }
+    }
+  },
+  "token_usage": {
+    "generator": {
+      "openai/gpt-oss-120b": {
+        "input_tokens": 2821,
+        "output_tokens": 278,
+        "total_tokens": 3099,
+        "output_token_details": {
+          "reasoning": 208
+        }
+      }
+    },
+    "judge": {
+      "qwen-3.8-27b": {
+        "output_tokens": 1345,
+        "input_tokens": 17249,
+        "output_token_details": {
+          "reasoning": 0
+        },
+        "input_token_details": {
+          "cache_read": 8192
+        },
+        "total_tokens": 18594
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "q001",
+      "group": "threshold",
+      "language": "vi",
+      "question": "Giới hạn PM2,5 trung bình 24 giờ theo QCVN 05:2023/BTNMT hiện nay là bao nhiêu?",
+      "ground_truth": "Theo Bảng 1 QCVN 05:2023/BTNMT, giới hạn PM2,5 trung bình 24 giờ là 45 µg/Nm3, áp dụng từ ngày 01/01/2026 (trước đó là 50 µg/Nm3).",
+      "reference_contexts": [
+        "| 7 | Bụi PM2,5 | - | - | 50; 45(*) | 25 |",
+        "- (*): Giá trị nồng độ áp dụng từ ngày 01 tháng 01 năm 2026."
+      ],
+      "reference_source": "qcvn_05_2023",
+      "answer": "Giới hạn nồng độ PM2,5 trung bình 24 giờ theo QCVN 05:2023/BTNMT hiện nay là **45 µg/Nm³** (giá trị áp dụng từ ngày 01/01/2026)【1】.",
+      "answer_scored": "Giới hạn nồng độ PM2,5 trung bình 24 giờ theo QCVN 05:2023/BTNMT hiện nay là **45 µg/Nm³** (giá trị áp dụng từ ngày 01/01/2026)【1】.",
+      "retrieved_contexts": [
+        "[QCVN 05:2023/BTNMT — Quy chuẩn kỹ thuật quốc gia về chất lượng không khí] 2. Quy định kỹ thuật > 2.1. Giá trị giới hạn tối đa của các thông số cơ bản\n\n2.1. Giá trị giới hạn tối đa của các thông số cơ bản trong không khí xung quanh được quy định tại Bảng 1.\n\nBảng 1: Giá trị giới hạn tối đa các thông số cơ bản trong không khí xung quanh (Đơn vị: µg/Nm3)\n\n| TT | Thông số | Trung bình 1 giờ | Trung bình 8 giờ | Trung bình 24 giờ | Trung bình năm |\n|---|---|---|---|---|---|\n| 1 | SO2 | 350 | - | 125 | 50 |\n| 2 | CO | 30.000 | 10.000 | - | - |\n| 3 | NO2 | 200 | - | 100 | 40 |\n| 4 | O3 | 200 | 120 | - | - |\n| 5 | Tổng bụi lơ lửng (TSP) | 300 | - | 200 | 100 |\n| 6 | Bụi PM10 | - | - | 100 | 50 |\n| 7 | Bụi PM2,5 | - | - | 50; 45(*) | 25 |\n\nGhi chú:\n\n- Dấu ( - ) là không quy định.\n- (*): Giá trị nồng độ áp dụng từ ngày 01 tháng 01 năm 2026.\n\n[Ghi chú biên soạn: ô PM2,5 – trung bình 24 giờ trong bản gốc chia làm hai giá trị \"50\" và \"45(*)\", tức giới hạn 50 µg/Nm3 trước ngày 01/01/2026 và 45 µg/Nm3 từ ngày 01/01/2026.]",
+        "[QCVN 05:2023/BTNMT — Quy chuẩn kỹ thuật quốc gia về chất lượng không khí] 2. Quy định kỹ thuật > 2.2. Giá trị giới hạn tối đa của các thông số độc hại\n\nBảng 2: Giá trị giới hạn tối đa của một số chất độc hại trong không khí xung quanh (Đơn vị: µg/Nm3)\n\n| TT | Thông số | Thời gian trung bình | Giá trị giới hạn |\n|---|---|---|---|\n| 14 | Mangan và hợp chất (tính theo MnO2) | 1 giờ | 10 |\n| 14 | Mangan và hợp chất (tính theo MnO2) | 24 giờ | 8 |\n| 15 | Nickel (Ni) và các hợp chất (tính theo Ni) | 24 giờ | 1 |\n| 16 | Thủy ngân (Hydrargyrum) (Hg) và các hợp chất (tính theo Hg) | 24 giờ | 0,3 |\n| 17 | Natri hydroxide (NaOH) | 24 giờ | 10 |\n| | **Các hợp chất hữu cơ** | | |\n| 18 | Acrolein (CH2=CHCHO) | 1 giờ | 50 |\n| 19 | Acrylonitrile (CH2=CHCN) | 24 giờ | 45 |\n| 20 | Aniline (C6H5NH2) | 1 giờ | 50 |\n| 20 | Aniline (C6H5NH2) | 24 giờ | 30 |\n| 21 | Benzene (C6H6) | 1 giờ | 22 |\n| 22 | Benzidine (NH2C6H4C6H4NH2) | 1 giờ | KPH |\n| 23 | Chloroform (CHCl3) | 24 giờ | 16 |\n| 24 | Tổng Hydrocarbon (CxHy) | 1 giờ | 5000 |\n| 24 | Tổng Hydrocarbon (CxHy) | 24 giờ | 1500 |\n| 25 | Formaldehyde (HCHO) | 1 giờ | 20 |\n| 26 | Naphthalene (C10H8) | 8 giờ | 500 |\n| 26 | Naphthalene (C10H8) | 24 giờ | 120 |\n| 27 | Phenol (C6H5OH) | 1 giờ | 10 |\n| 28 | Tetrachloethylene (C2Cl4) | 24 giờ | 100 |\n| 29 | Vinyl chloride (CICH=CH2) | 24 giờ | 26 |",
+        "[QCVN 05:2023/BTNMT — Quy chuẩn kỹ thuật quốc gia về chất lượng không khí] 2. Quy định kỹ thuật > 2.2. Giá trị giới hạn tối đa của các thông số độc hại\n\nBảng 2: Giá trị giới hạn tối đa của một số chất độc hại trong không khí xung quanh (Đơn vị: µg/Nm3)\n\n| TT | Thông số | Thời gian trung bình | Giá trị giới hạn |\n|---|---|---|---|\n| | **Các hợp chất vô cơ** | | |\n| 1 | Chì (Plumbum) (Pb) và các hợp chất (tính theo Chì) | 24 giờ | 1,5 |\n| 2 | Arsenic (As) và các hợp chất (tính theo As) | 1 giờ | 0,03 |\n| 3 | Arsenic Trihydride (AsH3) | 1 giờ | 0,3 |\n| 4 | Hydrochloride (HCl) | 24 giờ | 60 |\n| 5 | Acid Nitric (HNO3) | 1 giờ | 400 |\n| 5 | Acid Nitric (HNO3) | 24 giờ | 150 |\n| 6 | Acid Sulfuric (H2SO4) | 1 giờ | 300 |\n| 6 | Acid Sulfuric (H2SO4) | 24 giờ | 50 |\n| 7 | Tinh thể Silic oxide hô hấp (SiO2) | 1 giờ | 150 |\n| 7 | Tinh thể Silic oxide hô hấp (SiO2) | 24 giờ | 50 |\n| 8 | Amiăng trắng nhóm serpentine | 24 giờ | 1 sợi/m3 |\n| 9 | Cadmi (Cd) và các hợp chất (tính theo Cd) | 1 giờ | 0,4 |\n| 9 | Cadmi (Cd) và các hợp chất (tính theo Cd) | 8 giờ | 0,2 |\n| 10 | Chlorine (Cl2) | 1 giờ | 100 |\n| 10 | Chlorine (Cl2) | 24 giờ | 30 |\n| 11 | Chromi (6+) (Cr6+) và các hợp chất | 1 giờ | 0,007 |\n| 11 | Chromi (6+) (Cr6+) và các hợp chất | 24 giờ | 0,003 |\n| 12 | Hydrofluoride (HF) | 1 giờ | 20 |\n| 12 | Hydrofluoride (HF) | 24 giờ | 5 |\n| 13 | Hydro Cyanide (HCN) | 1 giờ | 10 |",
+        "[WHO global air quality guidelines: particulate matter (PM2.5 and PM10), ozone, nitrogen dioxide, sulfur dioxide and carbon monoxide. Executive summary] Recommendations on classical air pollutants\n\nIn this guideline update, recommendations on AQG levels are formulated, together with interim targets, for the following pollutants: PM2.5, PM10, ozone, nitrogen dioxide, sulfur dioxide and carbon monoxide (Table 0.1). The evidence-informed derivation of each AQG level and an indication of the reduction in health risk associated with the achievement of consecutive interim targets can be found in Chapter 3.\n\nTable 0.1. Recommended AQG levels and interim targets\n\n| Pollutant | Averaging time | Interim target 1 | Interim target 2 | Interim target 3 | Interim target 4 | AQG level |\n|---|---|---|---|---|---|---|\n| PM2.5, µg/m3 | Annual | 35 | 25 | 15 | 10 | 5 |\n| PM2.5, µg/m3 | 24-hour (a) | 75 | 50 | 37.5 | 25 | 15 |\n| PM10, µg/m3 | Annual | 70 | 50 | 30 | 20 | 15 |\n| PM10, µg/m3 | 24-hour (a) | 150 | 100 | 75 | 50 | 45 |\n| O3, µg/m3 | Peak season (b) | 100 | 70 | – | – | 60 |\n| O3, µg/m3 | 8-hour (a) | 160 | 120 | – | – | 100 |\n| NO2, µg/m3 | Annual | 40 | 30 | 20 | – | 10 |\n| NO2, µg/m3 | 24-hour (a) | 120 | 50 | – | – | 25 |\n| SO2, µg/m3 | 24-hour (a) | 125 | 50 | – | – | 40 |\n| CO, mg/m3 | 24-hour (a) | 7 | – | – | – | 4 |\n\n(a) 99th percentile (i.e. 3–4 exceedance days per year).\n(b) Average of daily maximum 8-hour mean O3 concentration in the six consecutive months with the highest six-month running-average O3 concentration.",
+        "[QCVN 05:2023/BTNMT — Quy chuẩn kỹ thuật quốc gia về chất lượng không khí] 2. Quy định kỹ thuật > 2.2. Giá trị giới hạn tối đa của các thông số độc hại\n\nBảng 2: Giá trị giới hạn tối đa của một số chất độc hại trong không khí xung quanh (Đơn vị: µg/Nm3)\n\n| TT | Thông số | Thời gian trung bình | Giá trị giới hạn |\n|---|---|---|---|\n| | **Các hợp chất gây mùi khó chịu** | | |\n| 30 | Ammonia (NH3) | 1 giờ | 200 |\n| 31 | Acetaldehyde (CH3CHO) | 1 giờ | 45 |\n| 32 | Acid Propionic (CH3CH2COOH) | 8 giờ | 300 |\n| 33 | Hydrosulfide (H2S) | 1 giờ | 42 |\n| 34 | Mercaptan tính theo Methyl Mercaptan (CH3SH) | 1 giờ | 50 |\n| 34 | Mercaptan tính theo Methyl Mercaptan (CH3SH) | 24 giờ | 20 |\n| 35 | Styrene (C6H5CH=CH2) | 24 giờ | 260 |\n| 36 | Toluene (C6H5CH3) | 1 giờ | 500 |\n| 37 | Xylene (C6H4(CH3)2) | 1 giờ | 1000 |"
+      ],
+      "retrieved_chunk_ids": [
+        "qcvn_05_2023-004",
+        "qcvn_05_2023-007",
+        "qcvn_05_2023-006",
+        "who_aqg_2021-004",
+        "qcvn_05_2023-008"
+      ],
+      "latency_s": 13.254,
+      "refused": false,
+      "ragas": {
+        "llm_context_precision_with_reference": 0.9999999999,
+        "context_recall": 1.0,
+        "faithfulness": 0.5,
+        "answer_relevancy": 0.8427958274028596
+      }
+    }
+  ]
+}
