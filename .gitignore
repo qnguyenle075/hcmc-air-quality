@@ -20,3 +20,6 @@ chroma_db/
 
 # Text trích xuất tự động (tái tạo được bằng src.ingest.extract)
 data/processed/auto/
+
+# Checkpoint eval dở dang (run_rag_eval --resume)
+eval/results/.partial/

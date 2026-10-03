@@ -1,12 +1,15 @@
 """Chạy RAGAS cho 1 variant RAG và ghi kết quả.
 
-Chạy: uv run python -m eval.run_rag_eval --variant v0 [--limit N]
+Chạy: uv run python -m eval.run_rag_eval --variant v0 [--limit N] [--resume]
 
 - Sinh câu trả lời cho toàn bộ testset bằng build_rag_chain(variant), đo latency từng câu.
 - RAGAS (judge = JUDGE_MODEL) chấm các câu trong phạm vi: context_precision, context_recall,
   faithfulness, answer_relevancy.
 - Câu out_of_scope: đo tỉ lệ từ chối đúng. Câu trong phạm vi: đo tỉ lệ từ chối nhầm.
 - Lưu eval/results/<YYYYMMDD-HHMM>_<variant>.json và cập nhật eval/results/ablation.md.
+- Checkpoint: mỗi câu sinh xong được ghi ngay vào eval/results/.partial/<variant>.jsonl. Nếu bị dừng
+  giữa chừng (vd Groq 429 hết quota ngày), chạy lại với --resume để chỉ sinh các câu còn thiếu.
+  Checkpoint chỉ được dùng lại khi config và câu hỏi khớp hoàn toàn; chạy xong thì checkpoint bị xóa.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from ragas.metrics import (  # noqa: E402
 )
 from ragas.run_config import RunConfig  # noqa: E402
 from langchain_core.callbacks import UsageMetadataCallbackHandler  # noqa: E402
+from langchain_core.messages.ai import add_usage  # noqa: E402
 
 from config.settings import settings  # noqa: E402
 from src.rag.chain import build_rag_chain  # noqa: E402
@@ -41,6 +45,7 @@ from src.rag.prompts import NO_INFO_EN, NO_INFO_VI  # noqa: E402
 from src.utils.llm import get_judge_llm  # noqa: E402
 
 TESTSET = settings.paths.eval_datasets / "rag_testset.jsonl"
+CHECKPOINT_DIR = settings.paths.eval_results / ".partial"
 METRIC_KEYS = ("llm_context_precision_with_reference", "context_recall", "faithfulness", "answer_relevancy")
 _REFUSAL_RE = re.compile(
     rf"{re.escape(NO_INFO_VI.rstrip('.'))}|{re.escape(NO_INFO_EN.rstrip('.'))}|"
@@ -77,15 +82,53 @@ def load_testset(limit: int | None = None) -> list[dict]:
     return rows[:limit] if limit else rows
 
 
-def generate_answers(variant: str, rows: list[dict], usage: UsageMetadataCallbackHandler) -> list[dict]:
-    """Chạy RAG chain cho từng câu (tuần tự để đo latency chính xác)."""
-    chain = build_rag_chain(variant)
+def load_checkpoint(path: Path, config: dict, rows: list[dict]) -> dict[str, dict]:
+    """Đọc checkpoint → {id: kết quả}. Dừng nếu config hoặc câu hỏi không khớp lần chạy hiện tại."""
+    if not path.exists():
+        return {}
+    lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not lines or lines[0].get("config") != json.loads(json.dumps(config)):  # tuple → list như khi đọc JSON
+        raise SystemExit(f"Checkpoint {path} có config khác lần chạy này → xóa file hoặc bỏ --resume")
+    questions = {r["id"]: r["question"] for r in rows}
+    done = {r["id"]: r for r in (line["result"] for line in lines[1:])}
+    if any(questions.get(i) != r["question"] for i, r in done.items()):
+        raise SystemExit(f"Checkpoint {path} có câu hỏi không khớp testset hiện tại → xóa file hoặc bỏ --resume")
+    return done
+
+
+def merge_usage(usages: list[dict]) -> dict:
+    """Cộng dồn token usage {model: UsageMetadata} của nhiều câu."""
+    total: dict = {}
+    for u in usages:
+        for model, meta in u.items():
+            total[model] = add_usage(total[model], meta) if model in total else meta
+    return total
+
+
+def generate_answers(
+    variant: str, rows: list[dict], config: dict, checkpoint: Path, resume: bool = False
+) -> tuple[list[dict], dict, int]:
+    """Chạy RAG chain cho từng câu (tuần tự để đo latency chính xác), ghi checkpoint sau mỗi câu.
+
+    Trả về (kết quả, token usage generator cộng dồn mọi lượt chạy, số câu lấy lại từ checkpoint).
+    """
+    done = load_checkpoint(checkpoint, config, rows) if resume else {}
+    if done:
+        print(f"  Resume: lấy lại {len(done)} câu từ {checkpoint}")
+    else:  # chạy mới: ghi đè checkpoint cũ, dòng đầu là config
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint.write_text(json.dumps({"config": config}, ensure_ascii=False) + "\n", encoding="utf-8")
+    chain = build_rag_chain(variant) if len(done) < len(rows) else None
     results = []
     for row in rows:
+        if row["id"] in done:
+            results.append(done[row["id"]])
+            continue
+        usage = UsageMetadataCallbackHandler()  # tách theo câu để cộng dồn đúng qua các lượt resume
         t0 = time.perf_counter()
         out = chain.invoke({"question": row["question"]}, config={"callbacks": [usage]})
         latency = time.perf_counter() - t0
-        results.append({
+        result = {
             **row,
             "answer": out["answer"],
             "answer_scored": strip_disclaimer(out["answer"]),  # bản đưa cho RAGAS chấm
@@ -93,9 +136,13 @@ def generate_answers(variant: str, rows: list[dict], usage: UsageMetadataCallbac
             "retrieved_chunk_ids": [d.metadata["chunk_id"] for d in out["contexts"]],
             "latency_s": round(latency, 3),
             "refused": is_refusal(out["answer"]),
-        })
-        print(f"  {row['id']} ({latency:.1f}s) refused={results[-1]['refused']}")
-    return results
+            "gen_token_usage": usage.usage_metadata,
+        }
+        results.append(result)
+        with checkpoint.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"result": result}, ensure_ascii=False) + "\n")
+        print(f"  {row['id']} ({latency:.1f}s) refused={result['refused']}")
+    return results, merge_usage([r.get("gen_token_usage", {}) for r in results]), len(done)
 
 
 def run_ragas(results: list[dict], usage: UsageMetadataCallbackHandler) -> list[dict]:
@@ -212,14 +259,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Chạy RAGAS cho 1 variant RAG")
     parser.add_argument("--variant", default="v0")
     parser.add_argument("--limit", type=int, default=None, help="Chỉ chạy N câu đầu (debug)")
+    parser.add_argument("--resume", action="store_true", help="Dùng lại câu trả lời đã sinh trong checkpoint")
     args = parser.parse_args()
 
     rows = load_testset(args.limit)
     config = run_config_snapshot(args.variant)
+    suffix = f"_limit{args.limit}" if args.limit else ""
+    checkpoint = CHECKPOINT_DIR / f"{args.variant}{suffix}.jsonl"
     t_start = time.perf_counter()
     print(f"[1/2] Sinh câu trả lời ({args.variant}, {len(rows)} câu)...")
-    gen_usage, judge_usage = UsageMetadataCallbackHandler(), UsageMetadataCallbackHandler()
-    results = generate_answers(args.variant, rows, gen_usage)
+    judge_usage = UsageMetadataCallbackHandler()
+    results, gen_usage, n_resumed = generate_answers(args.variant, rows, config, checkpoint, args.resume)
     print("[2/2] Chấm RAGAS...")
     results = run_ragas(results, judge_usage)
     summary = summarize(results)
@@ -230,15 +280,18 @@ def main() -> None:
     out_file.write_text(json.dumps({
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "config": config, "n_questions": len(rows), "runtime_s": elapsed,
+        # runtime_s chỉ tính lượt chạy cuối; latency từng câu vẫn đo ở lượt sinh ra câu đó
+        "n_resumed_from_checkpoint": n_resumed,
         "summary": summary,
-        "token_usage": {"generator": gen_usage.usage_metadata, "judge": judge_usage.usage_metadata},
+        "token_usage": {"generator": gen_usage, "judge": judge_usage.usage_metadata},
         "results": results,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.limit is None:
         update_ablation_md(args.variant, summary, out_file, config, len(rows))
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    print("Token usage:", json.dumps({"generator": gen_usage.usage_metadata, "judge": judge_usage.usage_metadata}, default=str))
+    checkpoint.unlink(missing_ok=True)  # đã lưu kết quả đầy đủ → không cần checkpoint nữa
+    print("Token usage:", json.dumps({"generator": gen_usage, "judge": judge_usage.usage_metadata}, default=str))
     print(f"Đã lưu {out_file} ({elapsed}s)")
 
 
