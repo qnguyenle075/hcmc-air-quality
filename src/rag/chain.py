@@ -11,10 +11,15 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import Runnable, RunnableLambda, RunnablePassthrough
 
 from src.rag.prompts import RAG_PROMPT_V0
-from src.rag.retrievers import get_dense_retriever, get_hybrid_retriever
+from src.rag.retrievers import (
+    get_dense_retriever,
+    get_hybrid_retriever,
+    get_multi_query_retriever,
+    get_rerank_retriever,
+)
 from src.utils.llm import get_llm
 
-VARIANTS = ("v0", "v1")  # sẽ mở rộng v2..v4 theo từng bước
+VARIANTS = ("v0", "v1", "v2", "v3")  # sẽ mở rộng v4 theo từng bước
 
 
 def format_context(docs: list[Document]) -> str:
@@ -41,8 +46,13 @@ def build_rag_chain(variant: str = "v0") -> Runnable:
     if variant not in VARIANTS:
         raise NotImplementedError(f"Variant {variant!r} chưa được cài đặt (hiện có: {VARIANTS})")
 
-    # V0: dense; V1: + BM25 (hybrid)
-    retriever = get_dense_retriever() if variant == "v0" else get_hybrid_retriever()
+    # V0: dense; V1: + BM25 (hybrid); V2: + multi-query; V3: + rerank
+    retriever = {
+        "v0": get_dense_retriever,
+        "v1": get_hybrid_retriever,
+        "v2": get_multi_query_retriever,
+        "v3": get_rerank_retriever,
+    }[variant]()
     prompt = RAG_PROMPT_V0
     llm = get_llm()
 

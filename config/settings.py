@@ -81,9 +81,12 @@ class RAGSettings:
     # Retrieval
     top_k: int = 5  # số chunk đưa vào prompt
     hybrid_weights: tuple[float, float] = (0.5, 0.5)  # (bm25, dense)
-    multi_query_n: int = 3
+    multi_query_n: int = 3  # V2: số biến thể câu hỏi (ngoài câu gốc)
+    rrf_c: int = 60  # hằng số RRF khi gộp kết quả nhiều truy vấn (giống mặc định EnsembleRetriever)
     rerank_fetch_k: int = 20  # V3: lấy rộng trước khi rerank
     rerank_top_n: int = 5
+    rerank_max_length: int = 1024  # câu hỏi + chunk (≤ chunk_size + header) không bị cắt khi chấm
+    rerank_batch_size: int = 4  # GPU 4 GB, fp16
 
     collection_name: str = "hcmc_aq_guidelines"
     # Thư mục chứa corpus .md (đã chỉnh tay) dùng để chunk

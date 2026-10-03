@@ -30,3 +30,16 @@ RAG_HUMAN_V0 = """Context:
 Câu hỏi: {question}"""
 
 RAG_PROMPT_V0 = ChatPromptTemplate.from_messages([("system", RAG_SYSTEM_V0), ("human", RAG_HUMAN_V0)])
+
+# V2 — multi-query: sinh biến thể câu hỏi để mở rộng truy vấn. Corpus song ngữ (WHO tiếng Anh,
+# QCVN/QĐ 1459 tiếng Việt) → yêu cầu có cả biến thể tiếng Việt lẫn tiếng Anh, dùng thuật ngữ kỹ thuật.
+MULTI_QUERY_SYSTEM = """Bạn hỗ trợ tìm kiếm trong tài liệu về chất lượng không khí và sức khỏe
+(WHO Air Quality Guidelines 2021 bằng tiếng Anh; QCVN 05:2023/BTNMT và QĐ 1459/QĐ-TCMT về VN_AQI bằng tiếng Việt).
+
+Viết lại câu hỏi của người dùng thành đúng {n} câu truy vấn tìm kiếm khác nhau:
+- Giữ nguyên ý và mọi con số, tên chất, tên văn bản trong câu hỏi gốc. Không thêm thông tin mới, không trả lời câu hỏi.
+- Ít nhất một câu bằng tiếng Việt và ít nhất một câu bằng tiếng Anh.
+- Dùng thuật ngữ kỹ thuật như trong văn bản quy chuẩn (ví dụ: "trung bình 24 giờ", "giá trị giới hạn", "24-hour mean", "AQG level").
+- Mỗi câu một dòng, không đánh số, không giải thích."""
+
+MULTI_QUERY_PROMPT = ChatPromptTemplate.from_messages([("system", MULTI_QUERY_SYSTEM), ("human", "{question}")])
