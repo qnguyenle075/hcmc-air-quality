@@ -20,7 +20,8 @@
 **Quyết định đã chốt (2026-10-02)** — ghi đè mọi chỗ khác trong file nếu mâu thuẫn:
 | Hạng mục | Quyết định |
 |---|---|
-| LLM (agent, generator, judge) | **Groq API** (free tier) qua `langchain-groq`. Không dùng Claude trả phí. `LLM_MODEL=openai/gpt-oss-120b` (tool calling tốt), `JUDGE_MODEL=openai/gpt-oss-20b` (tiết kiệm quota; lần đo cuối dùng 120b). Groq không còn Llama chat model tại thời điểm chọn |
+| LLM (agent, generator, judge) | **Groq API** (free tier) qua `langchain-groq`. Không dùng Claude trả phí. `LLM_MODEL=openai/gpt-oss-120b` (tool calling tốt) cho generator + agent. Groq không còn Llama chat model tại thời điểm chọn |
+| Judge RAGAS | **Cerebras** (free trial) qua `ChatOpenAI` + `base_url`, `JUDGE_MODEL=qwen-3.8-27b` — **khác họ model với generator** (tránh tự chấm), cố định cho mọi variant. Giữ đủ 4 metric LLM. Lý do: đo thật judge tốn ~16K token/câu → 1 lượt V0 ≈ 375K token, vượt Groq free tier (200K token/ngày); Cerebras free: 1M token/ngày, 5 RPM (có rate limiter phía client). Không dùng nhiều tài khoản để lách quota |
 | Nguồn dữ liệu AQI | **Open-Meteo Air Quality API** (dữ liệu mô hình CAMS, free, không cần key). Lý do: ngày 2026-10-02 WAQI có **0 trạm hoạt động** trong bbox TP.HCM (trạm Lãnh sự quán Mỹ ngừng gửi dữ liệu; `feed/geo` trả trạm ở Trat, Thái Lan ~480 km). Hướng mở rộng nếu cần số đo thật: OpenAQ |
 | Embedding / reranker | Chạy local trên **GPU** |
 | Thang AQI | **VN_AQI** theo QĐ 1459/QĐ-TCMT. Không dùng nhãn US EPA trong câu trả lời |
@@ -82,7 +83,7 @@ LLM tổng hợp → câu trả lời + khuyến nghị + nguồn trích dẫn
 | Sparse retrieval | BM25 (`rank_bm25`) qua `BM25Retriever` | |
 | Reranker | `BAAI/bge-reranker-v2-m3` (cross-encoder) | |
 | PDF extraction | `pymupdf` (fallback `pdfplumber` cho bảng) | |
-| RAG eval | `ragas` | |
+| RAG eval | `ragas` | 0.4.3 lỗi import với langchain-community 0.4.x → shim `eval/_ragas_compat.py`. Judge chạy trên Cerebras (`langchain-openai`) |
 | Agent eval | `agentevals` + LangSmith | |
 | Tracing | LangSmith | Bật qua env var |
 | Test | `pytest` | |
@@ -204,7 +205,10 @@ hcmc_air_quality/
 # LLM (Groq)
 GROQ_API_KEY=
 LLM_MODEL=                    # model Groq sinh câu trả lời / agent (phải hỗ trợ tool calling)
-JUDGE_MODEL=                  # model Groq chấm điểm RAGAS
+# Judge RAGAS (Cerebras, khác họ model với generator)
+JUDGE_PROVIDER=cerebras
+JUDGE_MODEL=qwen-3.8-27b
+CEREBRAS_API_KEY=
 
 # Data APIs
 NOMINATIM_USER_AGENT=hcmc-aq-agent/0.1 (your-email@example.com)
@@ -244,7 +248,7 @@ CHROMA_DIR=./chroma_db
 | 301–500 | Nguy hại | ... | ... |
 (Khoảng giá trị, tên mức và nội dung khuyến nghị phải đối chiếu đúng văn bản QĐ 1459.)
 
-Kèm: định nghĩa nhóm nhạy cảm (trẻ em, người già, người bệnh hô hấp/tim mạch, phụ nữ mang thai), khuyến nghị cụ thể (khẩu trang, hạn chế vận động ngoài trời, đóng cửa sổ, máy lọc không khí...).
+Kèm: định nghĩa nhóm nhạy cảm và khuyến nghị cụ thể — **chỉ lấy đúng nội dung văn bản gốc QĐ 1459** (nhóm nhạy cảm: người già, trẻ em, người mắc bệnh hô hấp, tim mạch…). **Không bổ sung** nội dung văn bản không có (vd phụ nữ mang thai, máy lọc không khí) — quyết định của người dùng ngày 2026-10-03. Câu hỏi về các nội dung đó → RAG trả "Tài liệu không có thông tin".
 
 ### 6.2 API thời gian thực
 **Open-Meteo Air Quality** (không cần key)
@@ -304,23 +308,23 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 
 #### Ngày 1 — Corpus + vector store → V0
 **Sáng — thu thập & làm sạch**
-- [ ] Tải 3 PDF vào `data/raw/` (WHO AQG exec summary, QCVN 05:2023, QĐ 1459/QĐ-TCMT) — kiểm tra hiệu lực QĐ 1459
-- [ ] Soạn nháp `data/curated/aqi_health_categories.md` từ QĐ 1459 → người dùng duyệt
-- [ ] `extract.py`: PDF → text bằng pymupdf; nếu bảng vỡ → thử pdfplumber
-- [ ] `clean.py`: chuẩn hóa unicode NFC (tiếng Việt), bỏ header/footer lặp, sửa ngắt dòng giữa câu
-- [ ] **Kiểm tra bằng mắt** bảng giới hạn trong QCVN 05:2023 (bảng thông số cơ bản & độc hại) — đúng số, đúng đơn vị
-- [ ] Lưu text sạch vào `data/processed/`
+- [x] Tải 3 PDF vào `data/raw/` (WHO AQG exec summary, QCVN 05:2023, QĐ 1459/QĐ-TCMT) — kiểm tra hiệu lực QĐ 1459
+- [x] Soạn nháp `data/curated/aqi_health_categories.md` từ QĐ 1459 → người dùng duyệt
+- [x] `extract.py`: PDF → text bằng pymupdf; nếu bảng vỡ → thử pdfplumber
+- [x] `clean.py`: chuẩn hóa unicode NFC (tiếng Việt), bỏ header/footer lặp, sửa ngắt dòng giữa câu
+- [x] **Kiểm tra bằng mắt** bảng giới hạn trong QCVN 05:2023 (bảng thông số cơ bản & độc hại) — đúng số, đúng đơn vị
+- [x] Lưu text sạch vào `data/processed/`
 
 **Chiều — chunk + embed + index**
-- [ ] `chunk.py`: ưu tiên split theo heading/điều khoản (1.1, 2.1, ...) cho QCVN; còn lại `RecursiveCharacterTextSplitter`
+- [x] `chunk.py`: ưu tiên split theo heading/điều khoản (1.1, 2.1, ...) cho QCVN; còn lại `RecursiveCharacterTextSplitter`
   - Mặc định: `chunk_size ≈ 600 token`, `overlap ≈ 100` (đặt trong settings)
   - Bảng: giữ nguyên 1 bảng trong 1 chunk, không cắt giữa bảng
   - Metadata: `{source, doc_title, section, language, chunk_id}`
-- [ ] `embeddings.py`: bge-m3 (normalize embeddings)
-- [ ] `vectorstore.py` + `scripts/build_index.py`: build Chroma, persist
-- [ ] `retrievers.py`: dense retriever
-- [ ] `prompts.py` + `chain.py`: V0 chain hoàn chỉnh
-- [ ] `tests/test_chunking.py`: không chunk rỗng, metadata đủ, bảng không bị cắt
+- [x] `embeddings.py`: bge-m3 (normalize embeddings)
+- [x] `vectorstore.py` + `scripts/build_index.py`: build Chroma, persist
+- [x] `retrievers.py`: dense retriever
+- [x] `prompts.py` + `chain.py`: V0 chain hoàn chỉnh
+- [x] `tests/test_chunking.py`: không chunk rỗng, metadata đủ, bảng không bị cắt
 
 **DoD ngày 1:**
 - `retriever.invoke("AQI 160 có nên ra ngoài không")` trả về chunk liên quan (kiểm tra bằng mắt)
@@ -467,7 +471,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 | Phase | Thời lượng | Trạng thái |
 |---|---|---|
 | 0 Setup | ~2 giờ | ✅ |
-| 1 RAG (V0→V4) | 3 ngày | ⬜ |
+| 1 RAG (V0→V4) | 3 ngày | 🟨 |
 | 2 Geo tools | 0.5–1 ngày | ⬜ |
 | 3 Agent | 1 ngày | ⬜ |
 | 4 Agent eval | 1 ngày | ⬜ |
@@ -489,7 +493,8 @@ Claude Code: cập nhật cột trạng thái (⬜ → 🟨 đang làm → ✅ x
 | Nominatim không hiểu địa chỉ tiếng Việt không dấu / viết tắt ("Q7") | Chuẩn hóa ("Q7" → "Quận 7"), thêm hậu tố thành phố |
 | Tên đơn vị hành chính thay đổi sau sáp nhập (1/7/2025) | Nhận cả tên cũ lẫn mới khi hỏi; trả lời bằng tên mới; dữ liệu OSM có thể chưa cập nhật hết → ghi vào hạn chế |
 | QĐ 1459 hết hiệu lực / bị thay thế | Kiểm tra trước khi ingest; nếu có văn bản mới thì báo người dùng |
-| Groq free tier giới hạn rate (req/phút, token/ngày) | Retry có backoff khi 429, cache kết quả eval, chạy subset khi debug, giãn cách request khi chạy RAGAS |
+| Groq free tier giới hạn rate (30 RPM, 8K TPM, 200K token/ngày mỗi model) | Retry có backoff khi 429; judge RAGAS chuyển sang Cerebras; chạy subset khi debug |
+| Cerebras free trial: 5 RPM; có thể là credit giới hạn thời gian (nguồn bên thứ ba nói 5 USD / 30 ngày, chưa xác minh) | Rate limiter phía client; mỗi lượt RAGAS đầy đủ ~50 phút; ghi token usage mỗi lượt; nếu trial hết → báo người dùng trước khi đổi judge (đổi judge = phải chấm lại mọi variant) |
 | Kết quả RAGAS dao động giữa các lần chạy | Chạy ≥ 2 lần cho variant cuối, báo trung bình |
 
 ---

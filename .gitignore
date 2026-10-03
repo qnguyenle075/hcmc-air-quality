@@ -17,3 +17,6 @@ chroma_db/
 .vscode/
 .idea/
 .claude/settings.local.json
+
+# Text trích xuất tự động (tái tạo được bằng src.ingest.extract)
+data/processed/auto/

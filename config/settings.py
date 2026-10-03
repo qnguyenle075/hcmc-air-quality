@@ -40,8 +40,17 @@ class LLMSettings:
 
     groq_api_key: str = _env("GROQ_API_KEY")
     model: str = _env("LLM_MODEL")
-    judge_model: str = _env("JUDGE_MODEL")
     temperature: float = 0.0
+
+    # Judge (RAGAS): khác họ model với generator để tránh tự chấm bài mình.
+    # Chạy trên Cerebras vì Groq free tier (200K token/ngày) không đủ cho RAGAS.
+    judge_provider: str = _env("JUDGE_PROVIDER", "cerebras")  # cerebras | groq
+    judge_model: str = _env("JUDGE_MODEL")
+    cerebras_api_key: str = _env("CEREBRAS_API_KEY")
+    cerebras_base_url: str = "https://api.cerebras.ai/v1"
+    judge_requests_per_minute: float = 5  # Cerebras free trial: 5 RPM
+    judge_reasoning_effort: str = "low"  # chỉ dùng khi judge_provider=groq (model gpt-oss)
+    judge_max_tokens: int = 4096  # tránh output bị cắt (finish_reason=length) khi chấm RAGAS
 
 
 @dataclass(frozen=True)
@@ -53,7 +62,7 @@ class RAGSettings:
     reranker_model: str = _env("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
     device: str = _env("DEVICE", "cuda")
     use_fp16: bool = True  # GPU 4 GB VRAM → bắt buộc fp16
-    max_seq_length: int = 512
+    max_seq_length: int = 1024  # phải ≥ chunk_size + header ngữ cảnh, nếu không đuôi chunk bị cắt khi embed
     embed_batch_size: int = 8
 
     # Chunking (đơn vị: token)
@@ -68,6 +77,9 @@ class RAGSettings:
     rerank_top_n: int = 5
 
     collection_name: str = "hcmc_aq_guidelines"
+    # Thư mục chứa corpus .md (đã chỉnh tay) dùng để chunk
+    corpus_dirs: tuple[str, ...] = ("data/processed", "data/curated")
+    corpus_exclude: tuple[str, ...] = ("NOTES.md",)
 
 
 @dataclass(frozen=True)
