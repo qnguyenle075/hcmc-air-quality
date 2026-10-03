@@ -41,7 +41,7 @@ def get_llm(
 def get_judge_llm(callbacks: list[BaseCallbackHandler] | None = None) -> BaseChatModel:
     """LLM chấm điểm RAGAS theo JUDGE_PROVIDER / JUDGE_MODEL.
 
-    - cerebras: API tương thích OpenAI → ChatOpenAI + base_url; có rate limiter phía client (5 RPM);
+    - cerebras: API tương thích OpenAI → ChatOpenAI + base_url; có rate limiter phía client (judge_requests_per_minute);
       reasoning_effort="none" để tắt reasoning (qwen-3.8-27b).
     - groq: ChatGroq, reasoning effort thấp để tiết kiệm quota.
     """

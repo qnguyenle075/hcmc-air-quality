@@ -21,7 +21,7 @@
 | Hạng mục | Quyết định |
 |---|---|
 | LLM (agent, generator, judge) | **Groq API** (free tier) qua `langchain-groq`. Không dùng Claude trả phí. `LLM_MODEL=openai/gpt-oss-120b` (tool calling tốt) cho generator + agent. Groq không còn Llama chat model tại thời điểm chọn |
-| Judge RAGAS | **Cerebras** (free trial) qua `ChatOpenAI` + `base_url`, `JUDGE_MODEL=qwen-3.8-27b` — **khác họ model với generator** (tránh tự chấm), cố định cho mọi variant. Giữ đủ 4 metric LLM. Lý do: đo thật judge tốn ~16K token/câu → 1 lượt V0 ≈ 375K token, vượt Groq free tier (200K token/ngày); Cerebras free: 1M token/ngày, 5 RPM (có rate limiter phía client). Không dùng nhiều tài khoản để lách quota |
+| Judge RAGAS | **Cerebras** (free trial) qua `ChatOpenAI` + `base_url`, `JUDGE_MODEL=qwen-3.8-27b` — **khác họ model với generator** (tránh tự chấm), cố định cho mọi variant. Giữ đủ 4 metric LLM. Lý do: đo thật judge tốn ~16K token/câu → 1 lượt V0 ≈ 375K token, vượt Groq free tier (200K token/ngày); Cerebras: header API đo 2026-10-03 cho thấy 450 RPM, 150K token/phút, 216M token/ngày (client giới hạn 30 RPM). Judge chạy `reasoning_effort=none` (tiết kiệm token); disclaimer y tế được cắt khỏi câu trả lời trước khi chấm. Không dùng nhiều tài khoản để lách quota |
 | Nguồn dữ liệu AQI | **Open-Meteo Air Quality API** (dữ liệu mô hình CAMS, free, không cần key). Lý do: ngày 2026-10-02 WAQI có **0 trạm hoạt động** trong bbox TP.HCM (trạm Lãnh sự quán Mỹ ngừng gửi dữ liệu; `feed/geo` trả trạm ở Trat, Thái Lan ~480 km). Hướng mở rộng nếu cần số đo thật: OpenAQ |
 | Embedding / reranker | Chạy local trên **GPU** |
 | Thang AQI | **VN_AQI** theo QĐ 1459/QĐ-TCMT. Không dùng nhãn US EPA trong câu trả lời |
@@ -494,7 +494,7 @@ Claude Code: cập nhật cột trạng thái (⬜ → 🟨 đang làm → ✅ x
 | Tên đơn vị hành chính thay đổi sau sáp nhập (1/7/2025) | Nhận cả tên cũ lẫn mới khi hỏi; trả lời bằng tên mới; dữ liệu OSM có thể chưa cập nhật hết → ghi vào hạn chế |
 | QĐ 1459 hết hiệu lực / bị thay thế | Kiểm tra trước khi ingest; nếu có văn bản mới thì báo người dùng |
 | Groq free tier giới hạn rate (30 RPM, 8K TPM, 200K token/ngày mỗi model) | Retry có backoff khi 429; judge RAGAS chuyển sang Cerebras; chạy subset khi debug |
-| Cerebras free trial: 5 RPM; có thể là credit giới hạn thời gian (nguồn bên thứ ba nói 5 USD / 30 ngày, chưa xác minh) | Rate limiter phía client; mỗi lượt RAGAS đầy đủ ~50 phút; ghi token usage mỗi lượt; nếu trial hết → báo người dùng trước khi đổi judge (đổi judge = phải chấm lại mọi variant) |
+| Cerebras free trial: giới hạn thực tế (header API, 2026-10-03) 450 RPM / 150K TPM / 216M token/ngày; có thể là credit giới hạn thời gian (nguồn bên thứ ba nói 5 USD / 30 ngày, chưa xác minh) | Rate limiter phía client 30 RPM (429 → giảm 20); ghi token usage mỗi lượt; nếu trial hết → báo người dùng trước khi đổi judge (đổi judge = phải chấm lại mọi variant) |
 | Kết quả RAGAS dao động giữa các lần chạy | Chạy ≥ 2 lần cho variant cuối, báo trung bình |
 
 ---

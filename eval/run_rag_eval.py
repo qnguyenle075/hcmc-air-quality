@@ -57,8 +57,8 @@ _DISCLAIMER_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Cấu hình chạy RAGAS: judge đã có rate limiter (5 RPM) → timeout mỗi job phải đủ dài để chờ lượt
-RAGAS_RUN_CONFIG = dict(max_workers=2, max_retries=10, max_wait=60, timeout=600)
+# Cấu hình chạy RAGAS: judge đã có rate limiter (judge_requests_per_minute) → timeout mỗi job phải đủ dài để chờ lượt
+RAGAS_RUN_CONFIG = dict(max_workers=4, max_retries=10, max_wait=60, timeout=600)
 
 
 def is_refusal(answer: str) -> bool:

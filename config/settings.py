@@ -48,7 +48,9 @@ class LLMSettings:
     judge_model: str = _env("JUDGE_MODEL")
     cerebras_api_key: str = _env("CEREBRAS_API_KEY")
     cerebras_base_url: str = "https://api.cerebras.ai/v1"
-    judge_requests_per_minute: float = 5  # Cerebras free trial: 5 RPM
+    # Rate limiter phía client. Header API Cerebras (đo 2026-10-03): 450 RPM, 150K TPM, 216M token/ngày.
+    # 30 RPM × ~5K token/job ≈ 150K TPM → sát giới hạn TPM; gặp 429 thì giảm xuống 20.
+    judge_requests_per_minute: float = 30
     # Mức reasoning của judge. Cerebras qwen-3.8-27b: "none" = tắt reasoning (theo docs Cerebras,
     # không dùng disable_reasoning/enable_thinking). Groq gpt-oss chỉ nhận low|medium|high.
     # Tắt reasoning để tiết kiệm token (đo 2026-10-03: reasoning chiếm ~85% output token judge).
