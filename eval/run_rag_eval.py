@@ -1,13 +1,17 @@
 """Chạy RAGAS cho 1 variant RAG và ghi kết quả.
 
-Chạy: uv run python -m eval.run_rag_eval --variant v0 [--limit N] [--resume]
+Chạy: uv run python -m eval.run_rag_eval --variant v0 [--split dev|test] [--limit N] [--resume]
 
+- --split dev (mặc định): bộ dev 28 câu (rag_devset.jsonl) — dùng cho ablation V0–V4, phân tích lỗi, chỉnh prompt.
+  --split test: bộ test 27 câu (rag_testset.jsonl) — chỉ đo một lần cuối Phase 1 cho V0 và variant tốt nhất;
+  không chỉnh hệ thống theo kết quả bộ này.
 - Sinh câu trả lời cho toàn bộ testset bằng build_rag_chain(variant), đo latency từng câu.
 - RAGAS (judge = JUDGE_MODEL) chấm các câu trong phạm vi: context_precision, context_recall,
   faithfulness, answer_relevancy.
 - Câu out_of_scope: đo tỉ lệ từ chối đúng. Câu trong phạm vi: đo tỉ lệ từ chối nhầm.
-- Lưu eval/results/<YYYYMMDD-HHMM>_<variant>.json và cập nhật eval/results/ablation.md.
-- Checkpoint: mỗi câu sinh xong được ghi ngay vào eval/results/.partial/<variant>.jsonl. Nếu bị dừng
+- Lưu eval/results/<YYYYMMDD-HHMM>_<variant>.json (bộ test: ..._<variant>_test.json) và cập nhật
+  eval/results/ablation.md (bảng dev hoặc bảng test).
+- Checkpoint: mỗi câu sinh xong được ghi ngay vào eval/results/.partial/<variant>[_test].jsonl. Nếu bị dừng
   giữa chừng (vd Groq 429 hết quota ngày), chạy lại với --resume để chỉ sinh các câu còn thiếu.
   Checkpoint chỉ được dùng lại khi config và câu hỏi khớp hoàn toàn; chạy xong thì checkpoint bị xóa.
 """
@@ -44,7 +48,12 @@ from src.rag.embeddings import get_embeddings  # noqa: E402
 from src.rag.prompts import NO_INFO_EN, NO_INFO_VI  # noqa: E402
 from src.utils.llm import get_judge_llm  # noqa: E402
 
-TESTSET = settings.paths.eval_datasets / "rag_testset.jsonl"
+# dev: chỉnh hệ thống + ablation; test: chỉ đo cuối (tách 2026-10-04 để tránh tune theo test set)
+DATASETS = {
+    "dev": settings.paths.eval_datasets / "rag_devset.jsonl",
+    "test": settings.paths.eval_datasets / "rag_testset.jsonl",
+}
+ABLATION_TEST_HEADING = "## Bộ test (đo một lần cuối Phase 1)"
 CHECKPOINT_DIR = settings.paths.eval_results / ".partial"
 METRIC_KEYS = ("llm_context_precision_with_reference", "context_recall", "faithfulness", "answer_relevancy")
 _REFUSAL_RE = re.compile(
@@ -76,9 +85,10 @@ def strip_disclaimer(answer: str) -> str:
     return _DISCLAIMER_RE.sub("", answer).strip()
 
 
-def load_testset(limit: int | None = None) -> list[dict]:
-    """Đọc testset JSONL."""
-    rows = [json.loads(line) for line in TESTSET.read_text(encoding="utf-8").splitlines() if line.strip()]
+def load_testset(split: str = "dev", limit: int | None = None) -> list[dict]:
+    """Đọc bộ câu hỏi JSONL của split (dev / test)."""
+    path = DATASETS[split]
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     return rows[:limit] if limit else rows
 
 
@@ -204,11 +214,11 @@ def summarize(results: list[dict]) -> dict:
     return summary
 
 
-def run_config_snapshot(variant: str) -> dict:
+def run_config_snapshot(variant: str, split: str = "dev") -> dict:
     """Cấu hình đầy đủ của lần chạy (để tái lập)."""
     rag = settings.rag
     return {
-        "variant": variant,
+        "variant": variant, "split": split, "dataset": DATASETS[split].name,
         "chunk_size": rag.chunk_size, "chunk_overlap": rag.chunk_overlap, "top_k": rag.top_k,
         "hybrid_weights": rag.hybrid_weights, "multi_query_n": rag.multi_query_n,
         "rerank_fetch_k": rag.rerank_fetch_k, "rerank_top_n": rag.rerank_top_n,
@@ -220,20 +230,54 @@ def run_config_snapshot(variant: str) -> dict:
     }
 
 
-def update_ablation_md(variant: str, summary: dict, result_file: Path, config: dict, n: int) -> None:
-    """Cập nhật dòng của variant trong bảng ablation + thêm 1 dòng lịch sử chạy."""
+LABELS = {"v0": "V0 dense", "v1": "V1 +hybrid", "v2": "V2 +multi-query", "v3": "V3 +rerank", "v4": "V4 +prompt"}
+_TABLE_HEADER = (
+    "| Variant | Ctx Precision | Ctx Recall | Faithfulness | Answer Rel. | OOS refusal | False refusal | Latency (s) | Ghi chú |\n"
+    "|---|---|---|---|---|---|---|---|---|\n"
+)
+
+
+def upsert_ablation_row(text: str, split: str, label: str, new_row: str) -> str:
+    """Thay dòng của variant trong bảng của split; bảng test chưa có dòng đó thì thêm vào cuối bảng.
+
+    Bảng dev đứng đầu file, bảng test nằm dưới ABLATION_TEST_HEADING (tạo trước mục lịch sử nếu chưa có).
+    """
+    row_re = rf"^\| {re.escape(label)} \|.*$"
+    if split == "dev":
+        head, sep, tail = text.partition(ABLATION_TEST_HEADING)
+        return re.sub(row_re, lambda _: new_row, head, count=1, flags=re.MULTILINE) + sep + tail
+    if ABLATION_TEST_HEADING not in text:
+        section = (f"{ABLATION_TEST_HEADING}\n\nCùng metric như bảng dev, trên bộ test "
+                   f"(`rag_testset.jsonl`, không dùng để chỉnh hệ thống).\n\n{_TABLE_HEADER}\n")
+        history = text.find("## Lịch sử chạy")
+        text = text[:history] + section + text[history:] if history >= 0 else text.rstrip("\n") + "\n\n" + section
+    head, sep, tail = text.partition(ABLATION_TEST_HEADING)
+    if re.search(row_re, tail, flags=re.MULTILINE):
+        tail = re.sub(row_re, lambda _: new_row, tail, count=1, flags=re.MULTILINE)
+    else:  # chèn sau dòng cuối của bảng test (bảng đầu tiên dưới heading)
+        lines = tail.split("\n")
+        first = next(i for i, line in enumerate(lines) if line.startswith("|"))
+        last = first
+        while last + 1 < len(lines) and lines[last + 1].startswith("|"):
+            last += 1
+        tail = "\n".join(lines[: last + 1] + [new_row] + lines[last + 1:])
+    return head + sep + tail
+
+
+def update_ablation_md(
+    variant: str, summary: dict, result_file: Path, config: dict, n: int, split: str = "dev"
+) -> None:
+    """Cập nhật dòng của variant trong bảng ablation (dev hoặc test) + thêm 1 dòng lịch sử chạy."""
     path = settings.paths.eval_results / "ablation.md"
-    labels = {"v0": "V0 dense", "v1": "V1 +hybrid", "v2": "V2 +multi-query", "v3": "V3 +rerank", "v4": "V4 +prompt"}
     if not path.exists():
-        rows = "\n".join(f"| {labels[v]} | | | | | | | | |" for v in labels)
+        rows = "\n".join(f"| {LABELS[v]} | | | | | | | | |" for v in LABELS)
         path.write_text(
             "# Ablation RAG (V0 → V4)\n\n"
+            "Bảng ablation đo trên bộ **dev** (`rag_devset.jsonl`). "
             "Metric RAGAS tính trên các câu trong phạm vi (không gồm out_of_scope). "
             "OOS refusal = tỉ lệ từ chối đúng ở nhóm out_of_scope; False refusal = tỉ lệ từ chối nhầm ở câu trong phạm vi.\n\n"
-            "| Variant | Ctx Precision | Ctx Recall | Faithfulness | Answer Rel. | OOS refusal | False refusal | Latency (s) | Ghi chú |\n"
-            "|---|---|---|---|---|---|---|---|---|\n"
-            f"{rows}\n\n## Lịch sử chạy\n\n"
-            "| Thời điểm | Variant | Số câu | Generator | Judge | Kết quả |\n|---|---|---|---|---|---|\n",
+            f"{_TABLE_HEADER}{rows}\n\n## Lịch sử chạy\n\n"
+            "| Thời điểm | Split | Variant | Số câu | Generator | Judge | Kết quả |\n|---|---|---|---|---|---|---|\n",
             encoding="utf-8",
         )
 
@@ -242,14 +286,13 @@ def update_ablation_md(variant: str, summary: dict, result_file: Path, config: d
 
     s = summary
     new_row = (
-        f"| {labels[variant]} | {fmt(s['llm_context_precision_with_reference'])} | {fmt(s['context_recall'])} | "
+        f"| {LABELS[variant]} | {fmt(s['llm_context_precision_with_reference'])} | {fmt(s['context_recall'])} | "
         f"{fmt(s['faithfulness'])} | {fmt(s['answer_relevancy'])} | {fmt(s['oos_refusal_rate'])} | "
         f"{fmt(s['false_refusal_rate'])} | {fmt(s['latency_mean_s'])} | {result_file.name} |"
     )
-    text = path.read_text(encoding="utf-8")
-    text = re.sub(rf"^\| {re.escape(labels[variant])} \|.*$", new_row, text, count=1, flags=re.MULTILINE)
+    text = upsert_ablation_row(path.read_text(encoding="utf-8"), split, LABELS[variant], new_row)
     text = text.rstrip("\n") + (
-        f"\n| {datetime.now():%Y-%m-%d %H:%M} | {variant} | {n} | {config['generator_model']} | "
+        f"\n| {datetime.now():%Y-%m-%d %H:%M} | {split} | {variant} | {n} | {config['generator_model']} | "
         f"{config['judge_model']} | {result_file.name} |\n"
     )
     path.write_text(text, encoding="utf-8")
@@ -258,16 +301,19 @@ def update_ablation_md(variant: str, summary: dict, result_file: Path, config: d
 def main() -> None:
     parser = argparse.ArgumentParser(description="Chạy RAGAS cho 1 variant RAG")
     parser.add_argument("--variant", default="v0")
+    parser.add_argument("--split", choices=tuple(DATASETS), default="dev",
+                        help="dev: ablation + chỉnh hệ thống; test: chỉ đo cuối Phase 1")
     parser.add_argument("--limit", type=int, default=None, help="Chỉ chạy N câu đầu (debug)")
     parser.add_argument("--resume", action="store_true", help="Dùng lại câu trả lời đã sinh trong checkpoint")
     args = parser.parse_args()
 
-    rows = load_testset(args.limit)
-    config = run_config_snapshot(args.variant)
+    rows = load_testset(args.split, args.limit)
+    config = run_config_snapshot(args.variant, args.split)
+    split_suffix = "_test" if args.split == "test" else ""  # dev giữ cách đặt tên như các lượt chạy trước khi tách
     suffix = f"_limit{args.limit}" if args.limit else ""
-    checkpoint = CHECKPOINT_DIR / f"{args.variant}{suffix}.jsonl"
+    checkpoint = CHECKPOINT_DIR / f"{args.variant}{split_suffix}{suffix}.jsonl"
     t_start = time.perf_counter()
-    print(f"[1/2] Sinh câu trả lời ({args.variant}, {len(rows)} câu)...")
+    print(f"[1/2] Sinh câu trả lời ({args.variant}, {args.split}, {len(rows)} câu)...")
     judge_usage = UsageMetadataCallbackHandler()
     results, gen_usage, n_resumed = generate_answers(args.variant, rows, config, checkpoint, args.resume)
     print("[2/2] Chấm RAGAS...")
@@ -276,7 +322,7 @@ def main() -> None:
     elapsed = round(time.perf_counter() - t_start, 1)
 
     settings.paths.eval_results.mkdir(parents=True, exist_ok=True)
-    out_file = settings.paths.eval_results / f"{datetime.now():%Y%m%d-%H%M}_{args.variant}.json"
+    out_file = settings.paths.eval_results / f"{datetime.now():%Y%m%d-%H%M}_{args.variant}{split_suffix}.json"
     out_file.write_text(json.dumps({
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "config": config, "n_questions": len(rows), "runtime_s": elapsed,
@@ -287,7 +333,7 @@ def main() -> None:
         "results": results,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.limit is None:
-        update_ablation_md(args.variant, summary, out_file, config, len(rows))
+        update_ablation_md(args.variant, summary, out_file, config, len(rows), args.split)
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     checkpoint.unlink(missing_ok=True)  # đã lưu kết quả đầy đủ → không cần checkpoint nữa
