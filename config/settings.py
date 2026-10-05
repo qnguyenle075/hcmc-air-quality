@@ -107,11 +107,16 @@ class APISettings:
         "sulphur_dioxide",
         "carbon_monoxide",
     )
-    open_meteo_past_days: int = 1  # đủ chuỗi giờ nếu công thức VN_AQI cần trung bình nhiều giờ
+    open_meteo_past_days: int = 1  # Nowcast PM cần 12 giờ gần nhất → hôm qua + hôm nay là đủ
+    open_meteo_forecast_days: int = 1  # chỉ cần đến hết hôm nay (giờ tương lai bị bỏ qua khi tính)
     timezone: str = "Asia/Ho_Chi_Minh"
     nominatim_url: str = "https://nominatim.openstreetmap.org/search"
+    # Reverse: tra phường/xã MỚI khi kết quả search là địa danh cũ không kèm phường (vd node "Quận 7")
+    nominatim_reverse_url: str = "https://nominatim.openstreetmap.org/reverse"
+    nominatim_reverse_zoom: int = 14  # mức phường/xã
     nominatim_user_agent: str = _env("NOMINATIM_USER_AGENT", "hcmc-aq-agent/0.1")
     nominatim_min_interval_s: float = 1.0  # chính sách Nominatim: ≤ 1 req/s
+    nominatim_limit: int = 5  # lấy vài kết quả, chọn kết quả đầu tiên nằm trong TP.HCM cũ
     timeout_s: float = 10.0
     max_retries: int = 2
     backoff_s: float = 1.0
@@ -121,11 +126,14 @@ class APISettings:
 class GeoSettings:
     """Phạm vi địa lý: TP.HCM CŨ (trước sáp nhập 1/7/2025).
 
-    Bbox là giá trị xấp xỉ, cần đối chiếu lại với ranh giới OSM ở Phase 2.
+    Kiểm tra 2 bước: bbox (lọc nhanh) → polygon ranh giới cũ. Bbox một mình không đủ vì
+    hình chữ nhật trùm cả một phần Bình Dương cũ (vd Thủ Dầu Một 10.98, 106.65).
     """
 
-    # (lat_min, lat_max, lng_min, lng_max)
-    hcmc_bbox: tuple[float, float, float, float] = (10.37, 11.17, 106.35, 107.03)
+    # (lat_min, lat_max, lng_min, lng_max) — bao ngoài polygon (lat 10.363–11.160, lng 106.357–107.014)
+    hcmc_bbox: tuple[float, float, float, float] = (10.36, 11.17, 106.35, 107.02)
+    # Polygon TP.HCM cũ: geoBoundaries gbHumanitarian (Chính phủ VN qua HDX/OCHA, 2020, CC BY 3.0 IGO)
+    boundary_file: Path = ROOT_DIR / "data" / "geo" / "hcmc_old_boundary.geojson"
     city_suffix: str = ", Thành phố Hồ Chí Minh"
 
 

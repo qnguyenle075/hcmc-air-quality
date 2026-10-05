@@ -138,7 +138,8 @@ hcmc_air_quality/
 │       └── logging.py
 ├── eval/
 │   ├── datasets/
-│   │   ├── rag_testset.jsonl     # 25–30 câu
+│   │   ├── rag_devset.jsonl      # dev 28 câu: ablation V0–V4, phân tích lỗi, chỉnh prompt
+│   │   ├── rag_testset.jsonl     # test 27 câu: chỉ đo cuối Phase 1 (V0 + variant tốt nhất)
 │   │   └── agent_testset.jsonl   # cùng câu + trajectory kỳ vọng
 │   ├── run_rag_eval.py           # chạy RAGAS cho 1 variant
 │   ├── run_ablation.py           # chạy V0→V4, xuất bảng
@@ -187,7 +188,8 @@ hcmc_air_quality/
 - Thêm disclaimer ngắn: thông tin tham khảo, không thay thế tư vấn y tế.
 
 ### 4.5 Eval
-- Mọi lần chạy eval lưu vào `eval/results/<YYYYMMDD-HHMM>_<variant>.json` + cập nhật `eval/results/ablation.md`.
+- Mọi lần chạy eval lưu vào `eval/results/<YYYYMMDD-HHMM>_<variant>.json` (bộ test: `..._<variant>_test.json`) + cập nhật `eval/results/ablation.md`.
+- **Tách dev/test** (quyết định 2026-10-04): `rag_devset.jsonl` (dev, 28 câu) dùng cho ablation V0–V4, phân tích lỗi, chỉnh prompt — được xem kết quả từng câu. `rag_testset.jsonl` (test, 27 câu) chỉ đo **một lần cuối Phase 1** cho V0 và variant tốt nhất (`--split test`); không xem kết quả từng câu trước lần đo đó, không chỉnh hệ thống theo bộ test. Số liệu đưa vào README/CV lấy từ bộ test.
 - Ghi kèm: variant, config (chunk_size, k, weights...), model generator, model judge, số câu, thời gian chạy, latency trung bình.
 - Dùng model nhỏ/rẻ làm judge khi thử nghiệm; chỉ dùng model lớn cho lần đo cuối. Ghi rõ judge model trong kết quả.
 - Không "tune theo test set" một cách gian lận: không sửa câu hỏi test để điểm cao hơn.
@@ -269,7 +271,7 @@ Response quan tâm: `current.*`, `hourly.time`, `hourly.<biến>`, `hourly_units
 ```
 GET https://nominatim.openstreetmap.org/search?q={address}&format=json&limit=1&countrycodes=vn
 ```
-→ Tự động thêm ", Thành phố Hồ Chí Minh" nếu chuỗi địa chỉ không chứa tên thành phố. Kiểm tra kết quả nằm trong bounding box **TP.HCM cũ** (trước sáp nhập 1/7/2025, không gồm Bình Dương / Bà Rịa–Vũng Tàu cũ); ngoài box → trả lỗi "ngoài phạm vi". Tọa độ bbox đặt trong `config/settings.py`.
+→ Tự động thêm ", Thành phố Hồ Chí Minh" nếu chuỗi địa chỉ không chứa tên thành phố. Kiểm tra kết quả nằm trong **TP.HCM cũ** (trước sáp nhập 1/7/2025, không gồm Bình Dương / Bà Rịa–Vũng Tàu cũ) bằng bbox + polygon ranh giới cũ; ngoài phạm vi → trả lỗi "out_of_scope". Bbox và đường dẫn polygon đặt trong `config/settings.py`.
 → Tên địa danh trong câu trả lời dùng **tên đơn vị hành chính mới** (phường/xã sau sáp nhập). Người dùng vẫn có thể hỏi bằng tên cũ ("Quận 7", "Q7", "Thủ Đức") — geocode theo địa danh rồi hiển thị tên mới nếu Nominatim trả về.
 
 ---
@@ -332,7 +334,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 
 #### Ngày 2 — Bộ test + baseline + V1
 **Sáng — bộ test**
-- [ ] Tạo `eval/datasets/rag_testset.jsonl`, 25–30 câu, schema:
+- [x] Tạo bộ câu hỏi eval, 25–30 câu, schema (bộ đầu tiên nay là `rag_devset.jsonl`, xem mục 4.5):
 ```json
 {
   "id": "q001",
@@ -344,32 +346,34 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
   "reference_source": "qcvn_05_2023 | who_aqg_2021 | qd_1459_vn_aqi | aqi_categories | none"
 }
 ```
-- [ ] Phân bổ:
+- [x] Phân bổ:
 | Nhóm | Số câu | Ví dụ |
 |---|---|---|
 | `threshold` — tra ngưỡng trực tiếp | ~10 | "Giới hạn PM2.5 trung bình 24 giờ theo QCVN 05:2023 là bao nhiêu?" |
 | `aqi_advice` — khuyến nghị theo mức VN_AQI | ~8 | "AQI 180 thì người bị hen suyễn nên làm gì?" |
 | `reasoning` — tổng hợp/so sánh | ~5 | "Ngưỡng PM2.5 của WHO và QCVN khác nhau thế nào?" |
 | `out_of_scope` — bẫy | ~5 | "Máy lọc không khí loại nào tốt nhất?" → phải nói không có thông tin |
-- [ ] Trộn câu tiếng Việt và tiếng Anh, trộn văn phong đời thường và văn phong kỹ thuật
-- [ ] **Người dùng duyệt bộ test** trước khi chạy eval (Claude Code soạn nháp, người dùng xác nhận ground truth)
+- [x] Trộn câu tiếng Việt và tiếng Anh, trộn văn phong đời thường và văn phong kỹ thuật
+- [x] **Người dùng duyệt bộ test** trước khi chạy eval (Claude Code soạn nháp, người dùng xác nhận ground truth)
+- [x] Soạn bộ test riêng `rag_testset.jsonl` (27 câu t001–t027, cùng schema và phân bổ) — người dùng duyệt 2026-10-05
 
 **Chiều — eval baseline + V1**
-- [ ] `eval/run_rag_eval.py --variant v0`: chạy RAGAS
+- [x] `eval/run_rag_eval.py --variant v0`: chạy RAGAS
   - Metrics: `context_precision`, `context_recall`, `faithfulness`, `answer_relevancy`
   - Đo thêm: latency trung bình/câu, tỉ lệ từ chối đúng ở nhóm `out_of_scope`
-- [ ] Ghi baseline vào `eval/results/ablation.md`
-- [ ] `retrievers.py`: BM25 retriever (trên cùng tập chunk) + hybrid ensemble (trọng số mặc định 0.5/0.5)
-- [ ] Chạy eval V1, cập nhật bảng
+- [x] Ghi baseline vào `eval/results/ablation.md`
+- [x] `retrievers.py`: BM25 retriever (trên cùng tập chunk) + hybrid ensemble (trọng số mặc định 0.5/0.5)
+- [x] Chạy eval V1, cập nhật bảng
 
 **DoD ngày 2:** bộ test được duyệt; có số V0 và V1.
 
 #### Ngày 3 — V2, V3, V4 + tổng hợp
-- [ ] V2: multi-query (sinh 3 biến thể câu hỏi, gộp kết quả, khử trùng lặp) → eval
-- [ ] V3: retrieve rộng k=20 → cross-encoder bge-reranker-v2-m3 → top 5 → eval
-- [ ] V4: tinh chỉnh prompt dựa trên lỗi quan sát được → eval
-- [ ] Phân tích lỗi: liệt kê các câu điểm thấp nhất ở variant tốt nhất, phân loại nguyên nhân
+- [x] V2: multi-query (sinh 3 biến thể câu hỏi, gộp kết quả, khử trùng lặp) → eval
+- [x] V3: retrieve rộng k=20 → cross-encoder bge-reranker-v2-m3 → top 5 → eval
+- [ ] V4: tinh chỉnh prompt dựa trên lỗi quan sát được → eval (lần 1 xong 2026-10-05; chờ lần 2 — mục 9: variant cuối chạy ≥ 2 lần)
+- [ ] Phân tích lỗi: liệt kê các câu điểm thấp nhất ở variant tốt nhất, phân loại nguyên nhân (`eval/results/error_analysis.md` — đã có V0–V2)
 - [ ] Chốt variant tốt nhất làm mặc định cho tool
+- [ ] Đo bộ test (`--split test`) cho V0 và variant tốt nhất, ghi vào bảng test trong `ablation.md`
 - [ ] `src/rag/tool.py`: `retrieve_health_guideline(query: str) -> str` (@tool), trả về câu trả lời + danh sách nguồn
 
 **Bảng chẩn đoán khi metric thấp:**
@@ -398,16 +402,20 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 ---
 
 ### PHASE 2 — Geo tools (≈ 0.5–1 ngày)
-- [ ] `tools/geocode.py` — `geocode_address(address: str)`
-  - Output: `{lat, lng, display_name, district?}` hoặc `{error}`
-  - Cache, rate limit, kiểm tra bounding box TP.HCM
-- [ ] `tools/vn_aqi.py` — hàm thuần tính VN_AQI từ nồng độ µg/m³ theo QĐ 1459 (xem mục 6.2), unit test với giá trị tính tay
-- [ ] `tools/air_quality.py` — `get_air_quality(lat: float, lng: float)`
-  - Output: `{vn_aqi, category, dominant_pollutant, pm25, pm10, no2, o3, so2, co, data_source, grid_lat, grid_lng, measured_at, note}` hoặc `{error}`
+> Làm trước khi đóng Phase 1 — quyết định của người dùng 2026-10-05 (Phase 2 không phụ thuộc RAG).
+
+- [x] `tools/geocode.py` — `geocode_address(address: str)`
+  - Output: `{lat, lng, display_name, ward, query, source}` hoặc `{error, message}` (`ward` = phường/xã mới thay cho `district`, vì sau sáp nhập không còn cấp quận/huyện)
+  - Cache, rate limit, kiểm tra phạm vi TP.HCM cũ: bbox → **polygon** (`data/geo/hcmc_old_boundary.geojson`, geoBoundaries gbHumanitarian — Chính phủ VN qua HDX/OCHA, 2020, CC BY 3.0 IGO). Bbox một mình không đủ: trùm cả Thủ Dầu Một; OSM đã ghi Bình Dương cũ là "Thành phố Hồ Chí Minh". Bản gbOpen (vẽ lại từ Wikipedia) bị loại vì lệch ~8 km
+  - Địa danh cũ không kèm phường (vd node lịch sử "Quận 7") → reverse geocode lấy phường/xã mới
+- [x] `tools/vn_aqi.py` — hàm thuần tính VN_AQI từ nồng độ µg/m³ theo QĐ 1459 (xem mục 6.2), unit test với giá trị tính tay (ví dụ mục 2.3 của văn bản)
+- [x] `tools/air_quality.py` — `get_air_quality(lat: float, lng: float)`
+  - Output: `{vn_aqi, category, category_color, dominant_pollutant, sub_indices, pm25, pm10, no2, o3, so2, co, pm25_nowcast, pm10_nowcast, unit, measured_at, data_source, grid_lat, grid_lng, method, note}` hoặc `{error, message}`
+  - VN_AQI **giờ** (PM dùng Nowcast 12 giờ), bỏ các giờ dự báo sau `current.time`
   - Tính `category` theo thang VN_AQI (hàm thuần, có unit test)
   - `note`: luôn nhắc đây là dữ liệu mô hình CAMS độ phân giải thô, không phải trạm đo
-- [ ] `tests/test_tools.py`: test với mock response (không gọi API thật trong unit test) + 1 integration test đánh dấu riêng
-- [ ] Sanity check thật: Q1 cũ, Q7 cũ, Thủ Đức cũ, Bình Tân cũ, Củ Chi cũ (hỏi bằng tên cũ lẫn tên phường/xã mới) + 1 địa điểm ngoài bbox (vd Thủ Dầu Một) phải bị từ chối
+- [x] `tests/test_tools.py`: test với mock response (không gọi API thật trong unit test) + integration test đánh dấu riêng (`pytest -m integration`; mặc định bị bỏ qua qua `addopts`)
+- [x] Sanity check thật (2026-10-05): Q1 cũ, Q7 cũ, Thủ Đức cũ, Bình Tân cũ, Củ Chi cũ (tên cũ lẫn tên phường/xã mới) đều trả đúng format; Thủ Dầu Một bị từ chối `out_of_scope`
 
 **DoD:** 2 tool trả đúng format cho 5 địa điểm; lỗi được xử lý không làm sập.
 
@@ -472,7 +480,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 |---|---|---|
 | 0 Setup | ~2 giờ | ✅ |
 | 1 RAG (V0→V4) | 3 ngày | 🟨 |
-| 2 Geo tools | 0.5–1 ngày | ⬜ |
+| 2 Geo tools | 0.5–1 ngày | ✅ |
 | 3 Agent | 1 ngày | ⬜ |
 | 4 Agent eval | 1 ngày | ⬜ |
 | 5 Hoàn thiện | tùy chọn | ⬜ |

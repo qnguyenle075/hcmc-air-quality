@@ -45,3 +45,4 @@ explicit = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["integration: test gọi API thật (chạy riêng bằng -m integration)"]
+addopts = "-m 'not integration'"
