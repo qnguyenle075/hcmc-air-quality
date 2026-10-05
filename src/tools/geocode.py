@@ -33,6 +33,30 @@ _WARD_PREFIXES = ("Phường ", "Xã ", "Đặc khu ")
 # Khóa địa chỉ Nominatim có thể chứa phường/xã
 _WARD_KEYS = ("suburb", "quarter", "city_district", "village", "town", "municipality")
 
+# Tên tỉnh/thành KHÁC TP.HCM (bỏ dấu): 63 tỉnh/thành cũ + "Huế" (34 tỉnh/thành mới đều mang tên một
+# tỉnh cũ, trừ Huế) + một số thành phố lớn / điểm du lịch không trùng tên tỉnh. Có tên này trong địa chỉ
+# → không thêm hậu tố TP.HCM (tránh "Hà Nội, TP.HCM" khớp nhầm một quán tên "Hà Nội" ở TP.HCM).
+# Không thể liệt kê hết địa danh ngoài TP.HCM → agent vẫn phải tự từ chối câu hỏi về nơi khác.
+_OTHER_PLACES = (
+    "an giang", "ba ria", "vung tau", "bac giang", "bac kan", "bac lieu", "bac ninh", "ben tre", "binh dinh",
+    "binh duong", "binh phuoc", "binh thuan", "ca mau", "can tho", "cao bang", "da nang", "danang", "dak lak",
+    "dak nong", "dien bien", "dong nai", "dong thap", "gia lai", "ha giang", "ha nam", "ha noi", "hanoi",
+    "ha tinh", "hai duong", "hai phong", "hau giang", "hoa binh", "hung yen", "khanh hoa", "kien giang",
+    "kon tum", "lai chau", "lam dong", "lang son", "lao cai", "long an", "nam dinh", "nghe an", "ninh binh",
+    "ninh thuan", "phu tho", "phu yen", "quang binh", "quang nam", "quang ngai", "quang ninh", "quang tri",
+    "soc trang", "son la", "tay ninh", "thai binh", "thai nguyen", "thanh hoa", "hue", "tien giang",
+    "tra vinh", "tuyen quang", "vinh long", "vinh phuc", "yen bai",
+    # thành phố / điểm du lịch
+    "da lat", "dalat", "nha trang", "bien hoa", "phan thiet", "quy nhon", "buon ma thuot", "pleiku",
+    "ha long", "sa pa", "sapa", "hoi an", "phu quoc", "my tho", "rach gia", "long xuyen", "cam ranh",
+)
+# Tên tỉnh đứng sau các từ này là tên phường/đường ở TP.HCM (vd "xa lộ Hà Nội", "phường Bình Thuận")
+_PROVINCE_RE = re.compile(
+    r"(?<!phuong )(?<!xa )(?<!duong )(?<!lo )(?<!ap )(?<!pho )(?<!cau )(?<!cho )\b(?:"
+    + "|".join(_OTHER_PLACES)
+    + r")\b"
+)
+
 CACHE_PATH: Path = settings.paths.geocode_cache
 _cache: dict[str, dict[str, Any]] | None = None
 _lock = threading.Lock()
@@ -65,12 +89,22 @@ def _strip_accents(text: str) -> str:
     return "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
 
 
+def _mentions_hcmc(text: str) -> bool:
+    return any(m in _strip_accents(text).lower() for m in _CITY_MARKERS)
+
+
+def mentions_other_province(text: str) -> bool:
+    """True nếu địa chỉ nêu tên một tỉnh/thành khác TP.HCM (không tính tên đường/phường trùng tên tỉnh)."""
+    return bool(_PROVINCE_RE.search(_strip_accents(text).lower()))
+
+
 def normalize_address(address: str) -> str:
-    """Chuẩn hóa NFC, khoảng trắng, viết tắt quận/phường; thêm ", Thành phố Hồ Chí Minh" nếu chưa có."""
+    """Chuẩn hóa NFC, khoảng trắng, viết tắt quận/phường; thêm ", Thành phố Hồ Chí Minh" nếu địa chỉ
+    chưa nêu TP.HCM và không nêu tỉnh/thành khác."""
     text = re.sub(r"\s+", " ", unicodedata.normalize("NFC", address)).strip(" ,.")
     text = re.sub(r"(?i)\bq\.?\s*(\d{1,2})\b", r"Quận \1", text)  # Q7, Q.7, q 7
     text = re.sub(r"(?i)\bp\.\s*(?=\D)", "Phường ", text)  # P. Tân Thuận (số phường cũ "P.5" giữ nguyên)
-    if not any(m in _strip_accents(text).lower() for m in _CITY_MARKERS):
+    if not _mentions_hcmc(text) and not mentions_other_province(text):
         text += settings.geo.city_suffix
     return text
 
@@ -152,7 +186,10 @@ def geocode(address: str) -> dict[str, Any]:
     if not results:
         return ToolError(error="not_found", message=f"Không tìm thấy địa điểm '{address}' trên OpenStreetMap.").model_dump()
 
-    for r in results:
+    # Người dùng nêu tỉnh/thành khác (không có hậu tố TP.HCM) → chỉ xét kết quả đứng đầu, không lục tiếp
+    # để tìm một điểm trùng tên ở TP.HCM (vd "Hà Nội" → quán "Hà Nội" ở Xã Bà Điểm)
+    candidates = results[:1] if mentions_other_province(query) and not _mentions_hcmc(query) else results
+    for r in candidates:
         lat, lng = float(r["lat"]), float(r["lon"])
         if not in_hcmc_old(lat, lng):
             continue
@@ -161,14 +198,26 @@ def geocode(address: str) -> dict[str, Any]:
         _save_cache(key, out)
         return out
 
-    first = results[0]
-    out = ToolError(
-        error="out_of_scope",
-        message=f"'{first['display_name']}' ({float(first['lat']):.4f}, {float(first['lon']):.4f}) nằm ngoài "
-        "TP.HCM cũ (ranh giới trước 1/7/2025) — ngoài phạm vi hệ thống.",
-    ).model_dump()
+    out = ToolError(error="out_of_scope", message=out_of_scope_message(results[0])).model_dump()
     _save_cache(key, out)
     return out
+
+
+def out_of_scope_message(result: dict[str, Any]) -> str:
+    """Câu báo ngoài phạm vi; phân biệt vùng sáp nhập vào TP.HCM từ 1/7/2025 với tỉnh/thành khác."""
+    address = result.get("address", {})
+    name = extract_ward(address) or result["display_name"].split(",")[0]
+    province = address.get("state") or address.get("city")
+    where = f"{name}{f', {province}' if province and province not in name else ''}"
+    where += f" ({float(result['lat']):.4f}, {float(result['lon']):.4f})"
+    # Dùng mã tỉnh có cấu trúc, không dò chữ trong display_name (tên đường có thể chứa "Thành phố Hồ Chí Minh")
+    if address.get("ISO3166-2-lvl4") == settings.geo.hcmc_iso_code:
+        # OSM đã ghi là TP.HCM nhưng ngoài ranh giới cũ → thuộc Bình Dương / Bà Rịa–Vũng Tàu cũ
+        return (
+            f"{where} thuộc khu vực sáp nhập vào TP.HCM từ 1/7/2025 (Bình Dương / Bà Rịa–Vũng Tàu cũ). "
+            "Hệ thống hiện chỉ hỗ trợ khu vực TP.HCM trước sáp nhập."
+        )
+    return f"{where} không thuộc TP.HCM. Hệ thống chỉ hỗ trợ khu vực TP.HCM trước sáp nhập 1/7/2025."
 
 
 @tool("geocode_address", args_schema=GeocodeInput)

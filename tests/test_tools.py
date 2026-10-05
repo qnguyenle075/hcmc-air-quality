@@ -157,6 +157,16 @@ def test_ngoai_tphcm_cu(name: str) -> None:
         ("Ben Thanh market, Ho Chi Minh City", "Ben Thanh market, Ho Chi Minh City"),
         ("  Quận   1 ", "Quận 1, Thành phố Hồ Chí Minh"),
         ("QL1A, Bình Chánh", "QL1A, Bình Chánh, Thành phố Hồ Chí Minh"),
+        # Nêu tỉnh/thành khác → không thêm hậu tố
+        ("Hà Nội", "Hà Nội"),
+        ("Bến Lức, Long An", "Bến Lức, Long An"),
+        ("Hue", "Hue"),
+        ("Đà Lạt", "Đà Lạt"),
+        # Tên đường/phường trùng tên tỉnh → vẫn là TP.HCM
+        ("xa lộ Hà Nội", "xa lộ Hà Nội, Thành phố Hồ Chí Minh"),
+        ("đường Đồng Nai", "đường Đồng Nai, Thành phố Hồ Chí Minh"),
+        ("phường Bình Thuận", "phường Bình Thuận, Thành phố Hồ Chí Minh"),
+        ("Phú Nhuận", "Phú Nhuận, Thành phố Hồ Chí Minh"),
     ],
 )
 def test_normalize_address(raw: str, expected: str) -> None:
@@ -208,10 +218,49 @@ def test_geocode_chon_ket_qua_dau_tien_trong_tphcm_cu(fake_geo) -> None:
 
 
 def test_geocode_ngoai_pham_vi(fake_geo) -> None:
-    fake_geo(FakeNominatim(search=[_hit(10.9809, 106.6537, "Phường Thủ Dầu Một, Thành phố Hồ Chí Minh")]))
+    fake_geo(FakeNominatim(search=[_hit(
+        10.9809, 106.6537, "Phường Thủ Dầu Một, Thành phố Hồ Chí Minh, 75123, Việt Nam",
+        {"suburb": "Phường Thủ Dầu Một", "city": "Thành phố Hồ Chí Minh", "ISO3166-2-lvl4": "VN-SG"},
+    )]))
     out = geocode.geocode("Thủ Dầu Một")
     assert out["error"] == "out_of_scope"
-    assert "Thủ Dầu Một" in out["message"]
+    assert out["message"].startswith("Phường Thủ Dầu Một")
+    assert "sáp nhập vào TP.HCM từ 1/7/2025" in out["message"]
+
+
+def test_geocode_ngoai_pham_vi_tinh_khac(fake_geo) -> None:
+    # Response thật 2026-10-06: tên đường chứa "Thành phố Hồ Chí Minh" nhưng thuộc Tây Ninh (VN-37)
+    fake_geo(FakeNominatim(search=[_hit(
+        10.6467, 106.4828, "Đường cao tốc Vành Đai 4 Thành phố Hồ Chí Minh, Xã Bến Lức, Tỉnh Tây Ninh, Việt Nam",
+        {"road": "Đường cao tốc Vành Đai 4 Thành phố Hồ Chí Minh", "town": "Xã Bến Lức", "state": "Tỉnh Tây Ninh",
+         "ISO3166-2-lvl4": "VN-37"},
+    )]))
+    out = geocode.geocode("Bến Lức, Long An")
+    assert out["error"] == "out_of_scope"
+    assert out["message"].startswith("Xã Bến Lức, Tỉnh Tây Ninh (")
+    assert "không thuộc TP.HCM" in out["message"]
+
+
+def test_geocode_top_thuoc_tinh_khac_khong_lay_diem_trung_ten(fake_geo) -> None:
+    fake_geo(FakeNominatim(search=[
+        _hit(21.0283, 105.8540, "Thành phố Hà Nội, Việt Nam", {"city": "Thành phố Hà Nội", "ISO3166-2-lvl4": "VN-HN"}),
+        _hit(10.8628, 106.6109, "Hà Nội, Xã Bà Điểm, Thành phố Hồ Chí Minh",
+             {"city_district": "Xã Bà Điểm", "ISO3166-2-lvl4": "VN-SG"}),
+    ]))
+    out = geocode.geocode("Hà Nội")
+    assert out["error"] == "out_of_scope"
+    assert "không thuộc TP.HCM" in out["message"]
+
+
+def test_geocode_duong_trung_ten_tinh_van_tim_trong_tphcm(fake_geo) -> None:
+    # "đường Đồng Nai" (Q10 cũ): kết quả đầu ở Đồng Nai nhưng người dùng không nêu tỉnh khác → xét tiếp
+    fake_geo(FakeNominatim(search=[
+        _hit(10.7927, 107.1250, "Xã Châu Đức, Thành phố Đồng Nai", {"ISO3166-2-lvl4": "VN-39"}),
+        _hit(10.7790, 106.6650, "Đường Đồng Nai, Phường Hòa Hưng, Thành phố Hồ Chí Minh",
+             {"suburb": "Phường Hòa Hưng", "ISO3166-2-lvl4": "VN-SG"}),
+    ]))
+    out = geocode.geocode("đường Đồng Nai")
+    assert out["ward"] == "Phường Hòa Hưng"
 
 
 def test_geocode_khong_tim_thay(fake_geo) -> None:

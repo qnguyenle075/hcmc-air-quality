@@ -135,6 +135,7 @@ class GeoSettings:
     # Polygon TP.HCM cũ: geoBoundaries gbHumanitarian (Chính phủ VN qua HDX/OCHA, 2020, CC BY 3.0 IGO)
     boundary_file: Path = ROOT_DIR / "data" / "geo" / "hcmc_old_boundary.geojson"
     city_suffix: str = ", Thành phố Hồ Chí Minh"
+    hcmc_iso_code: str = "VN-SG"  # mã ISO 3166-2 của TP.HCM trong địa chỉ Nominatim (ISO3166-2-lvl4)
 
 
 @dataclass(frozen=True)
