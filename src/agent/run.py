@@ -14,6 +14,7 @@ import sys
 import time
 import uuid
 
+from groq import APIError
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.errors import GraphRecursionError
 from langgraph.graph.state import CompiledStateGraph
@@ -46,6 +47,10 @@ def ask(graph: CompiledStateGraph, question: str, thread_id: str) -> str:
                         answer = msg.content
     except GraphRecursionError:
         answer = "Agent vượt quá số bước cho phép (recursion_limit) — dừng để tránh vòng lặp."
+    except APIError as exc:
+        # Lỗi LLM của agent (429 hết quota, 503 quá tải, mất kết nối): báo ngắn gọn thay vì văng traceback
+        status = getattr(exc, "status_code", None)
+        answer = f"Không gọi được LLM ({type(exc).__name__}{f', HTTP {status}' if status else ''}) — thử lại sau."
     print(f"  ({time.perf_counter() - start:.1f}s)")
     return answer
 

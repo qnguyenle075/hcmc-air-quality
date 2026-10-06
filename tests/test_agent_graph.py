@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import httpx
 import pytest
+from groq import APIConnectionError
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
@@ -13,6 +15,7 @@ from langgraph.errors import GraphRecursionError
 
 from src.agent.graph import build_graph, run_config
 from src.agent.prompts import build_system_prompt
+from src.agent.run import ask
 
 NOW = datetime(2026, 10, 6, 9, 30)
 
@@ -163,3 +166,16 @@ def test_system_prompt_noi_dung_bat_buoc() -> None:
         assert name in text
     assert "không phải trạm quan trắc" in text
     assert "không thay thế tư vấn y tế" in text
+
+
+class FailingLLM(FakeToolLLM):
+    """LLM giả luôn lỗi kết nối (thay cho 429 / 503 của Groq)."""
+
+    def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
+        raise APIConnectionError(request=httpx.Request("POST", "https://api.groq.com"))
+
+
+def test_ask_bat_loi_llm_khong_vang_traceback() -> None:
+    graph = build_graph(llm=FailingLLM(responses=[], seen=[]), tools=TOOLS, now=lambda: NOW)
+    answer = ask(graph, "Không khí ở Quận 7 thế nào?", "t-loi")
+    assert answer.startswith("Không gọi được LLM (APIConnectionError")
