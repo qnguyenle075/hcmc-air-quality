@@ -422,12 +422,12 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 ---
 
 ### PHASE 3 — Agent LangGraph (≈ 1 ngày)
-- [ ] `agent/graph.py`: StateGraph với node `agent` (LLM bind_tools) + node `tools` (ToolNode), cạnh điều kiện: có tool call → tools, không → END
-- [ ] Giới hạn số bước (recursion limit ~ 8) để tránh loop
-- [ ] Memory nhiều lượt (checkpointer) — hỏi tiếp "vậy có nên mở cửa sổ không?" không cần nhắc lại địa chỉ
-- [ ] `agent/prompts.py`: system prompt theo mục 4.4
-- [ ] `agent/run.py`: CLI chat, in ra trace tool calls (tên tool + args) để debug
-- [ ] `tests/test_agent_graph.py`: với LLM giả/mock, kiểm tra graph route đúng
+- [x] `agent/graph.py`: StateGraph với node `agent` (LLM bind_tools) + node `tools` (ToolNode), cạnh điều kiện: có tool call → tools, không → END
+- [x] Giới hạn số bước (recursion limit ~ 8) để tránh loop
+- [x] Memory nhiều lượt (checkpointer) — hỏi tiếp "vậy có nên mở cửa sổ không?" không cần nhắc lại địa chỉ
+- [x] `agent/prompts.py`: system prompt theo mục 4.4 (kèm thời điểm hiện tại — lỗi q001)
+- [x] `agent/run.py`: CLI chat, in ra trace tool calls (tên tool + args) để debug
+- [x] `tests/test_agent_graph.py`: với LLM giả/mock, kiểm tra graph route đúng
 - [ ] Chạy thử 10 câu, xem trace trên LangSmith
 
 **Trajectory kỳ vọng điển hình:**
@@ -481,7 +481,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 | 0 Setup | ~2 giờ | ✅ |
 | 1 RAG (V0→V4) | 3 ngày | 🟨 |
 | 2 Geo tools | 0.5–1 ngày | ✅ |
-| 3 Agent | 1 ngày | ⬜ |
+| 3 Agent | 1 ngày | 🟨 |
 | 4 Agent eval | 1 ngày | ⬜ |
 | 5 Hoàn thiện | tùy chọn | ⬜ |
 
