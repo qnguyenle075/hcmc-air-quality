@@ -16,6 +16,7 @@ Cùng metric như bảng dev, trên bộ test (`rag_testset.jsonl`, không dùng
 
 | Variant | Ctx Precision | Ctx Recall | Faithfulness | Answer Rel. | OOS refusal | False refusal | Latency (s) | Ghi chú |
 |---|---|---|---|---|---|---|---|---|
+| V0 dense | 0.637 | 1.000 | 0.871 | 0.856 | 1.000 | 0.000 | 16.117 | 20261006-1824_v0_test.json |
 
 ## Lịch sử chạy
 
@@ -29,3 +30,4 @@ Các lượt trước 2026-10-05 chạy trên file `rag_testset.jsonl` cũ — n
 | 2026-10-05 13:46 | dev | v3 | 28 | openai/gpt-oss-120b | qwen-3.8-27b | 20261005-1346_v3.json |
 | 2026-10-05 14:34 | dev | v4 | 28 | openai/gpt-oss-120b | qwen-3.8-27b | 20261005-1434_v4.json |
 | 2026-10-06 15:09 | dev | v4 | 28 | openai/gpt-oss-120b | qwen-3.8-27b | 20261006-1509_v4.json |
+| 2026-10-06 18:24 | test | v0 | 27 | openai/gpt-oss-120b | qwen-3.8-27b | 20261006-1824_v0_test.json |

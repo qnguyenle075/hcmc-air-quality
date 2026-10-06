@@ -370,11 +370,11 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 #### Ngày 3 — V2, V3, V4 + tổng hợp
 - [x] V2: multi-query (sinh 3 biến thể câu hỏi, gộp kết quả, khử trùng lặp) → eval
 - [x] V3: retrieve rộng k=20 → cross-encoder bge-reranker-v2-m3 → top 5 → eval
-- [ ] V4: tinh chỉnh prompt dựa trên lỗi quan sát được → eval (lần 1 xong 2026-10-05; chờ lần 2 — mục 9: variant cuối chạy ≥ 2 lần)
-- [ ] Phân tích lỗi: liệt kê các câu điểm thấp nhất ở variant tốt nhất, phân loại nguyên nhân (`eval/results/error_analysis.md` — đã có V0–V2)
-- [ ] Chốt variant tốt nhất làm mặc định cho tool
-- [ ] Đo bộ test (`--split test`) cho V0 và variant tốt nhất, ghi vào bảng test trong `ablation.md`
-- [ ] `src/rag/tool.py`: `retrieve_health_guideline(query: str) -> str` (@tool), trả về câu trả lời + danh sách nguồn
+- [x] V4: tinh chỉnh prompt dựa trên lỗi quan sát được → eval (2 lần: 2026-10-05, 2026-10-06; `ablation.md` ghi trung bình)
+- [x] Phân tích lỗi: liệt kê các câu điểm thấp nhất ở variant tốt nhất, phân loại nguyên nhân (`eval/results/error_analysis.md`, V0–V4)
+- [x] Chốt variant tốt nhất làm mặc định cho tool — **V4** (2026-10-06, `settings.rag.tool_variant`)
+- [ ] Đo bộ test (`--split test`) cho V0 và variant tốt nhất, ghi vào bảng test trong `ablation.md` (V0 xong 2026-10-06; còn V4)
+- [x] `src/rag/tool.py`: `retrieve_health_guideline(query: str)` (@tool), trả về `{answer, found, sources, variant}` hoặc `{error, message}`; test `tests/test_rag_tool.py`
 
 **Bảng chẩn đoán khi metric thấp:**
 | Metric thấp | Nguyên nhân thường gặp | Hướng sửa |

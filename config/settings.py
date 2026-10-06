@@ -88,6 +88,9 @@ class RAGSettings:
     rerank_max_length: int = 1024  # câu hỏi + chunk (≤ chunk_size + header) không bị cắt khi chấm
     rerank_batch_size: int = 4  # GPU 4 GB, fp16
 
+    # Variant dùng cho tool retrieve_health_guideline — chốt V4 ngày 2026-10-06 (eval/results/ablation.md)
+    tool_variant: str = "v4"
+
     collection_name: str = "hcmc_aq_guidelines"
     # Thư mục chứa corpus .md (đã chỉnh tay) dùng để chunk
     corpus_dirs: tuple[str, ...] = ("data/processed", "data/curated")

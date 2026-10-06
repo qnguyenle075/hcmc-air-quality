@@ -1,4 +1,4 @@
-# Phân tích lỗi RAG — V0, V1, V2
+# Phân tích lỗi RAG — V0 → V4
 
 Ngày phân tích: 2026-10-04. Dữ liệu: `20261003-1550_v0.json`, `20261003-1654_v1.json`, `20261004-1240_v2.json`
 (28 câu, generator `openai/gpt-oss-120b`, judge `qwen-3.8-27b`). V3 chưa có kết quả tại thời điểm viết.
@@ -71,3 +71,52 @@ Chỉ thực hiện sau khi V3 đo xong, chờ người dùng duyệt:
 4. Context chỉ đủ một phần câu hỏi → trả lời phần có thông tin, nói rõ phần tài liệu không có; không từ chối cả câu.
 
 Lỗi retrieval câu nhiều ý (q020, q023) thuộc phạm vi V3 (rerank với fetch_k=20), không xử lý bằng prompt.
+
+## 4. V4 (variant chốt) — lỗi còn lại
+
+Ngày phân tích: 2026-10-06. Dữ liệu: `20261005-1346_v3.json`, hai lượt V4 `20261005-1434_v4.json` (V4a) và
+`20261006-1509_v4.json` (V4b), bộ dev 28 câu. V4 dùng cùng retrieval với V3 (chỉ khác prompt), nên context
+precision / recall từng câu gần như trùng V3; khác biệt nằm ở câu trả lời.
+
+**Quyết định (2026-10-06):** chốt V4 làm variant mặc định. Faithfulness tăng 0.871 → 0.922 (trung bình 2 lượt);
+đổi lại answer relevancy giảm 0.842 → 0.808 (xem mục 4.2).
+
+### 4.1 Lỗi đã sửa được so với V2/V3
+
+| Câu | V3 | V4 (cả 2 lượt) |
+|---|---|---|
+| q011 | Thêm "có thể cần dùng thuốc hen suyễn thường xuyên hơn" — lấy từ mức 101–150, sai mức | Chỉ trích đúng dòng mức 151–200 cho nhóm nhạy cảm |
+| q014 | Faithfulness 0.25 | Nêu khoảng + tên mức, khuyến nghị đúng nhóm; faithfulness 1.00 |
+| q020 | Dùng nhãn US EPA (lỗi ở V2) | Dùng tên mức VN_AQI; phần thiếu nói bằng câu "không đề cập" (trả lời một phần, đúng quy tắc mới) |
+
+### 4.2 Answer relevancy giảm — đánh đổi do prompt, không phải lỗi sai nội dung
+
+9 câu giảm answer relevancy > 0.05 ở **cả hai** lượt V4 (q002, q003, q005, q009, q012, q013, q015, q017, q021);
+3 câu tăng (q010, q014, q023). Câu trả lời V4 ngắn hơn (trung vị 170 → ~148 ký tự) và không còn câu kết luận
+trả lời thẳng câu hỏi đời thường:
+
+| Câu | V3 | V4 |
+|---|---|---|
+| q012 (AQI 75, người khỏe chạy bộ được không) | "...tự do thực hiện các hoạt động ngoài trời, **bao gồm việc chạy bộ**" | "Tự do thực hiện các hoạt động ngoài trời" |
+| q015 (AQI 320 có nên mở cửa sổ) | "...**Vì vậy, không nên mở cửa sổ**" | Chỉ trích "đóng cửa ra vào và cửa sổ" |
+
+Nguyên nhân: quy tắc V4 "không thêm ... kết luận mà context không nêu" khiến generator bỏ bước nối khuyến nghị với
+câu hỏi. RAGAS answer relevancy sinh ngược câu hỏi từ câu trả lời, nên câu trả lời thiếu ý "chạy bộ"/"mở cửa sổ" bị
+điểm thấp hơn. Nội dung V4 vẫn đúng văn bản; đây là đánh đổi faithfulness ↔ relevancy.
+
+### 4.3 Lỗi sai nội dung còn lại (cần lưu ý khi ghép vào agent)
+
+| Loại lỗi | Câu | Chi tiết |
+|---|---|---|
+| Đọc nhầm cột bảng | q007 | Cả hai lượt V4 trả **40 µg/m³** (cột Interim target 1) thay vì **10 µg/m³** (cột AQG level) cho NO2 trung bình năm, dù Bảng 0.1 WHO có trong context (`who_aqg_2021-004`). V3 trả đúng (1 lượt). Judge bắt được (faithfulness 0) |
+| Không biết ngày hiện tại | q001 | Hỏi giới hạn PM2,5 24 giờ "hiện nay": cả hai lượt V4 trả 50 µg/Nm³ (giá trị trước 01/01/2026) thay vì 45. Prompt không có ngày hiện tại nên generator không xác định được giá trị nào đang hiệu lực. **Judge không bắt được** (faithfulness 1.00 vì 50 có trong context) |
+| Từ chối cả câu dù có một nửa context | q022 | Retrieval lấy được dòng NO2 của QCVN (`qcvn_05_2023-004`) nhưng không lấy được Bảng 0.1 WHO; generator vẫn từ chối cả câu, không theo quy tắc "trả lời một phần" của V4. Lỗi ở cả V0–V4 |
+| Retrieval thiếu ý phụ | q019, q023 | Context recall 0.50–0.67, như V3 — rerank chưa kéo được chunk ý phụ lên top 5 |
+| Judge chấm nhiễu | q011, q013, q018 | Câu trả lời V4 trích gần nguyên văn nhưng faithfulness dao động giữa 2 lượt (q011: 0.60 / 0.25; q013: 1.00 / 0.75; q018: 0.80 / 1.00) |
+
+### 4.4 Đề xuất (chưa thực hiện, chờ người dùng duyệt)
+
+- **Agent (Phase 3):** đưa ngày hiện tại vào system prompt agent / prompt RAG để xử lý câu hỏi "hiện nay" với các
+  giá trị có hiệu lực theo mốc thời gian (q001).
+- Không chỉnh thêm prompt RAG trong Phase 1: V4 đã chốt, bộ test đo trên V4 nguyên trạng. Lỗi q007, q022 ghi vào hạn
+  chế đã biết.
