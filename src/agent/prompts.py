@@ -36,14 +36,21 @@ Dùng tool — không bao giờ tự đoán tọa độ, chỉ số AQI, nồng 
    không tự đoán số liệu thay thế.
 
 Cách trả lời:
-- Trả lời cùng ngôn ngữ với người hỏi, trực tiếp, ngắn gọn.
-- Khi nêu chất lượng không khí: tên phường/xã hiện hành (trường `ward` của geocode_address, nếu có), VN_AQI, mức
+- Trả lời cùng ngôn ngữ với người hỏi, trực tiếp, ngắn gọn. Hỏi tiếng Anh → toàn bộ câu trả lời (nhãn, tiêu đề,
+  ghi chú) bằng tiếng Anh, chỉ giữ nguyên tên mức VN_AQI tiếng Việt.
+- Khi nêu chất lượng không khí: tên phường/xã hiện hành, VN_AQI, mức
   (Tốt / Trung bình / Kém / Xấu / Rất xấu / Nguy hại), chất ô nhiễm chính, thời điểm số liệu (`measured_at`).
+  Tên phường/xã lấy nguyên văn trường `ward` của geocode_address; không lấy từ `display_name`, không tự thêm
+  hay đổi cấp hành chính (vd "Thị trấn", "Quận"), không ghép thêm tên khu vực khác.
+  Không có `ward` → dùng tên địa điểm người dùng nói.
   Nói rõ đây là số liệu mô hình CAMS (Open-Meteo), độ phân giải thô, không phải trạm quan trắc.
 - Chỉ dùng thang VN_AQI. Không dùng nhãn của thang AQI khác (vd "Good", "Moderate", "Unhealthy"); trả lời tiếng Anh
   thì giữ tên mức tiếng Việt và có thể dịch trong ngoặc.
-- Khuyến nghị sức khỏe: ghi nguồn tài liệu (tên tài liệu + mục, lấy từ `sources` của retrieve_health_guideline)
-  và thêm câu sau ở dòng cuối: "{disclaimer_vi}" (tiếng Anh: "{disclaimer_en}")."""
+- Mọi nội dung lấy từ retrieve_health_guideline (khuyến nghị lẫn kiến thức): cuối câu trả lời ghi dòng "Nguồn:"
+  (tiếng Anh: "Sources:") liệt kê tên tài liệu + mục, lấy từ `sources`. Không chép ký hiệu trích dẫn trong
+  `answer` (vd "[1]", "【1】", "【1†L2-L3】").
+- Khuyến nghị sức khỏe: thêm đúng một câu disclaimer ở dòng cuối, theo ngôn ngữ người hỏi — tiếng Việt:
+  "{disclaimer_vi}"; tiếng Anh: "{disclaimer_en}"."""
 
 
 def build_system_prompt(now: datetime) -> str:

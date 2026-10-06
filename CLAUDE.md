@@ -428,7 +428,8 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 - [x] `agent/prompts.py`: system prompt theo mục 4.4 (kèm thời điểm hiện tại — lỗi q001)
 - [x] `agent/run.py`: CLI chat, in ra trace tool calls (tên tool + args) để debug
 - [x] `tests/test_agent_graph.py`: với LLM giả/mock, kiểm tra graph route đúng
-- [ ] Chạy thử 10 câu, xem trace trên LangSmith
+- [x] Chạy thử 10 câu với LLM thật (2026-10-06): 10/10 gọi đúng chuỗi tool, không bịa số liệu. Sửa prompt sau lượt chạy: tên phường lấy nguyên văn `ward`, luôn ghi dòng "Nguồn:" / "Sources:", bỏ ký hiệu `【…】`, câu trả lời tiếng Anh viết toàn bộ bằng tiếng Anh, chỉ một câu disclaimer. Lần chạy lại sau lần sửa cuối chưa xong vì hết quota Groq trong ngày
+- [ ] Xem trace trên LangSmith (tùy chọn — cần tạo LangSmith project ở Phase 0)
 
 **Trajectory kỳ vọng điển hình:**
 | Loại câu hỏi | Trajectory |
@@ -481,7 +482,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 | 0 Setup | ~2 giờ | ✅ |
 | 1 RAG (V0→V4) | 3 ngày | 🟨 |
 | 2 Geo tools | 0.5–1 ngày | ✅ |
-| 3 Agent | 1 ngày | 🟨 |
+| 3 Agent | 1 ngày | ✅ |
 | 4 Agent eval | 1 ngày | ⬜ |
 | 5 Hoàn thiện | tùy chọn | ⬜ |
 
