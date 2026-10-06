@@ -373,7 +373,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 - [x] V4: tinh chỉnh prompt dựa trên lỗi quan sát được → eval (2 lần: 2026-10-05, 2026-10-06; `ablation.md` ghi trung bình)
 - [x] Phân tích lỗi: liệt kê các câu điểm thấp nhất ở variant tốt nhất, phân loại nguyên nhân (`eval/results/error_analysis.md`, V0–V4)
 - [x] Chốt variant tốt nhất làm mặc định cho tool — **V4** (2026-10-06, `settings.rag.tool_variant`)
-- [ ] Đo bộ test (`--split test`) cho V0 và variant tốt nhất, ghi vào bảng test trong `ablation.md` (V0 xong 2026-10-06; còn V4)
+- [x] Đo bộ test (`--split test`) cho V0 và variant tốt nhất, ghi vào bảng test trong `ablation.md` (V0 2026-10-06, V4 2026-10-07)
 - [x] `src/rag/tool.py`: `retrieve_health_guideline(query: str)` (@tool), trả về `{answer, found, sources, variant}` hoặc `{error, message}`; test `tests/test_rag_tool.py`
 
 **Bảng chẩn đoán khi metric thấp:**
@@ -428,7 +428,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 - [x] `agent/prompts.py`: system prompt theo mục 4.4 (kèm thời điểm hiện tại — lỗi q001)
 - [x] `agent/run.py`: CLI chat, in ra trace tool calls (tên tool + args) để debug
 - [x] `tests/test_agent_graph.py`: với LLM giả/mock, kiểm tra graph route đúng
-- [x] Chạy thử 10 câu với LLM thật (2026-10-06): 10/10 gọi đúng chuỗi tool, không bịa số liệu. Sửa prompt sau lượt chạy: tên phường lấy nguyên văn `ward`, luôn ghi dòng "Nguồn:" / "Sources:", bỏ ký hiệu `【…】`, câu trả lời tiếng Anh viết toàn bộ bằng tiếng Anh, chỉ một câu disclaimer. Lần chạy lại sau lần sửa cuối chưa xong vì hết quota Groq trong ngày
+- [x] Chạy thử 10 câu với LLM thật (2026-10-06): 10/10 gọi đúng chuỗi tool, không bịa số liệu. Sửa prompt sau lượt chạy: tên phường lấy nguyên văn `ward`, luôn ghi dòng "Nguồn:" / "Sources:", bỏ ký hiệu `【…】`, câu trả lời tiếng Anh viết toàn bộ bằng tiếng Anh, chỉ một câu disclaimer. Chạy lại c03/c05/c10 sau lần sửa cuối (2026-10-07): đạt
 - [ ] Xem trace trên LangSmith (tùy chọn — cần tạo LangSmith project ở Phase 0)
 
 **Trajectory kỳ vọng điển hình:**
@@ -480,7 +480,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 | Phase | Thời lượng | Trạng thái |
 |---|---|---|
 | 0 Setup | ~2 giờ | ✅ |
-| 1 RAG (V0→V4) | 3 ngày | 🟨 |
+| 1 RAG (V0→V4) | 3 ngày | ✅ |
 | 2 Geo tools | 0.5–1 ngày | ✅ |
 | 3 Agent | 1 ngày | ✅ |
 | 4 Agent eval | 1 ngày | ⬜ |

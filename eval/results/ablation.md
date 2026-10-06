@@ -17,6 +17,7 @@ Cùng metric như bảng dev, trên bộ test (`rag_testset.jsonl`, không dùng
 | Variant | Ctx Precision | Ctx Recall | Faithfulness | Answer Rel. | OOS refusal | False refusal | Latency (s) | Ghi chú |
 |---|---|---|---|---|---|---|---|---|
 | V0 dense | 0.637 | 1.000 | 0.871 | 0.856 | 1.000 | 0.000 | 16.117 | 20261006-1824_v0_test.json |
+| V4 +prompt | 0.917 | 0.909 | 0.970 | 0.844 | 0.800 | 0.000 | 21.936 | 20261007-0116_v4_test.json. OOS 4/5: t024 (phụ nữ mang thai) không từ chối — xếp phụ nữ mang thai vào nhóm nhạy cảm, văn bản không có; không chỉnh hệ thống theo bộ test |
 
 ## Lịch sử chạy
 
@@ -31,3 +32,4 @@ Các lượt trước 2026-10-05 chạy trên file `rag_testset.jsonl` cũ — n
 | 2026-10-05 14:34 | dev | v4 | 28 | openai/gpt-oss-120b | qwen-3.8-27b | 20261005-1434_v4.json |
 | 2026-10-06 15:09 | dev | v4 | 28 | openai/gpt-oss-120b | qwen-3.8-27b | 20261006-1509_v4.json |
 | 2026-10-06 18:24 | test | v0 | 27 | openai/gpt-oss-120b | qwen-3.8-27b | 20261006-1824_v0_test.json |
+| 2026-10-07 01:16 | test | v4 | 27 | openai/gpt-oss-120b | qwen-3.8-27b | 20261007-0116_v4_test.json |
