@@ -456,12 +456,12 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 }
 ```
 - [x] Thêm câu khó: địa điểm mơ hồ ("chỗ tôi"), địa điểm ngoài TP.HCM, follow-up nhiều lượt
-- [x] `eval/run_agent_eval.py` với `agentevals` (viết xong + test `tests/test_agent_eval.py`, chạy thử 2 câu 2026-10-07; chưa chạy cả bộ):
+- [x] `eval/run_agent_eval.py` với `agentevals` (viết xong + test `tests/test_agent_eval.py`, chạy cả bộ 25 câu 2026-10-07, `20261007-1857_agent.json`):
   - Trajectory match (strict / unordered / superset tùy loại)
   - LLM-as-judge trajectory (không cần reference)
-- [ ] Metrics: tool selection accuracy, trajectory match rate, số bước trung bình vs tối thiểu, tỉ lệ loop, tỉ lệ từ chối đúng, latency end-to-end
-- [ ] Lưu kết quả + bảng tổng hợp vào `eval/results/agent_eval.md`
-- [ ] Phân tích lỗi: lỗi do chọn tool sai vs do tool trả kết quả sai vs do RAG
+- [x] Metrics: tool selection accuracy, trajectory match rate, số bước trung bình vs tối thiểu, tỉ lệ loop, tỉ lệ từ chối đúng, latency end-to-end (trajectory match 0.96, judge pass 0.958, loop 0, latency TB 14.9s)
+- [x] Lưu kết quả + bảng tổng hợp vào `eval/results/agent_eval.md`
+- [x] Phân tích lỗi: lỗi do chọn tool sai vs do tool trả kết quả sai vs do RAG (`eval/results/agent_error_analysis.md`, có đọc tay 25 câu: 19/25 không lỗi nặng; judge bỏ sót lỗi ngôn ngữ / khuyên ngoài tài liệu)
 
 **DoD:** có bảng số liệu agent eval + danh sách lỗi đã phân loại.
 
@@ -483,7 +483,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 | 1 RAG (V0→V4) | 3 ngày | ✅ |
 | 2 Geo tools | 0.5–1 ngày | ✅ |
 | 3 Agent | 1 ngày | ✅ |
-| 4 Agent eval | 1 ngày | 🟨 |
+| 4 Agent eval | 1 ngày | ✅ |
 | 5 Hoàn thiện | tùy chọn | ⬜ |
 
 Claude Code: cập nhật cột trạng thái (⬜ → 🟨 đang làm → ✅ xong) khi hoàn thành phase.

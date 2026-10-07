@@ -2,6 +2,8 @@
 
 Bộ câu hỏi: `eval/datasets/agent_testset.jsonl`. Trajectory match / tool selection / args hints chấm theo luật (agentevals); Judge pass = LLM-as-judge không reference (rubric trong `eval/run_agent_eval.py`). Bước = số tool call ở lượt được chấm. Câu `follow_up` chỉ chấm lượt cuối.
 
+Phân tích lỗi (phân loại nguyên nhân + đọc tay 25 câu): xem `agent_error_analysis.md`.
+
 ## Các lượt chạy
 
 | Thời điểm | Số câu | Trajectory match | Tool selection | Args hints | Judge pass | Bước TB / tối thiểu | Loop | Latency TB (s) | Generator | Judge | Kết quả |
