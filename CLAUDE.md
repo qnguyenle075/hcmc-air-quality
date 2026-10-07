@@ -445,7 +445,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 ---
 
 ### PHASE 4 — Agent evaluation (≈ 1 ngày)
-- [ ] `eval/datasets/agent_testset.jsonl`: dùng lại câu hỏi phù hợp + thêm câu có địa điểm, thêm cột:
+- [x] `eval/datasets/agent_testset.jsonl` (25 câu, người dùng duyệt 2026-10-07; thêm `match_mode` strict/subset/superset, `setup_turns` cho follow_up, `note`): dùng lại câu hỏi phù hợp + thêm câu có địa điểm, thêm cột:
 ```json
 {
   "id": "a001",
@@ -455,8 +455,8 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
   "category": "full | aqi_only | knowledge_only | out_of_scope | follow_up | ambiguous"
 }
 ```
-- [ ] Thêm câu khó: địa điểm mơ hồ ("chỗ tôi"), địa điểm ngoài TP.HCM, follow-up nhiều lượt
-- [ ] `eval/run_agent_eval.py` với `agentevals`:
+- [x] Thêm câu khó: địa điểm mơ hồ ("chỗ tôi"), địa điểm ngoài TP.HCM, follow-up nhiều lượt
+- [x] `eval/run_agent_eval.py` với `agentevals` (viết xong + test `tests/test_agent_eval.py`, chạy thử 2 câu 2026-10-07; chưa chạy cả bộ):
   - Trajectory match (strict / unordered / superset tùy loại)
   - LLM-as-judge trajectory (không cần reference)
 - [ ] Metrics: tool selection accuracy, trajectory match rate, số bước trung bình vs tối thiểu, tỉ lệ loop, tỉ lệ từ chối đúng, latency end-to-end
@@ -483,7 +483,7 @@ Build theo variant, **đo RAGAS sau mỗi variant**:
 | 1 RAG (V0→V4) | 3 ngày | ✅ |
 | 2 Geo tools | 0.5–1 ngày | ✅ |
 | 3 Agent | 1 ngày | ✅ |
-| 4 Agent eval | 1 ngày | ⬜ |
+| 4 Agent eval | 1 ngày | 🟨 |
 | 5 Hoàn thiện | tùy chọn | ⬜ |
 
 Claude Code: cập nhật cột trạng thái (⬜ → 🟨 đang làm → ✅ xong) khi hoàn thành phase.

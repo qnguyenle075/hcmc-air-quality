@@ -146,6 +146,11 @@ class AgentSettings:
     """Cấu hình LangGraph agent."""
 
     recursion_limit: int = 8
+    # Eval agent (eval/run_agent_eval.py): Groq free tier 8K token/phút, 1 câu `full` (agent + RAG V4) đã gần chạm
+    # → nghỉ giữa các câu để cửa sổ TPM hồi lại (không tính vào latency); vẫn 429 → chờ rồi chạy lại cả câu.
+    eval_cooldown_s: float = 60.0
+    eval_rate_limit_wait_s: float = 60.0
+    eval_rate_limit_retries: int = 3
 
 
 @dataclass(frozen=True)
